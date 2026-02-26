@@ -1023,6 +1023,13 @@ function AtlasPostCreator({ onImageCreated }) {
   const canvasH = canvasSize.h;
   const [showSizePicker, setShowSizePicker] = useState(false);
   const [showTextMenu, setShowTextMenu] = useState(false);
+  const [customTemplates, setCustomTemplates] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("atlas_custom_templates") || "[]"); }
+    catch { return []; }
+  });
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [saveTemplateDesc, setSaveTemplateDesc] = useState("");
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [imagePickerTarget, setImagePickerTarget] = useState(null);
   const [photoCat, setPhotoCat] = useState("all");
@@ -1248,6 +1255,53 @@ function AtlasPostCreator({ onImageCreated }) {
     setView("editor");
   };
 
+  // ─── Custom Templates ───
+  const saveAsTemplate = async () => {
+    if (!saveTemplateName.trim()) return;
+    let thumb = null;
+    try {
+      if (canvasRef.current) {
+        const cap = await html2canvas(canvasRef.current, { scale: 0.4, useCORS: true, allowTaint: true, backgroundColor: null });
+        thumb = cap.toDataURL("image/jpeg", 0.75);
+      }
+    } catch(e) {}
+    const tmpl = {
+      id: `custom_${Date.now()}`,
+      name: saveTemplateName.trim(),
+      desc: saveTemplateDesc.trim() || "Custom template",
+      thumb,
+      savedW: canvasW,
+      savedH: canvasH,
+      layers: JSON.parse(JSON.stringify(layers)),
+      createdAt: Date.now(),
+    };
+    setCustomTemplates(prev => {
+      const next = [tmpl, ...prev];
+      try { localStorage.setItem("atlas_custom_templates", JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
+    setShowSaveModal(false);
+    setSaveTemplateName("");
+    setSaveTemplateDesc("");
+  };
+
+  const loadCustomTemplate = (tmpl) => {
+    const maxId = tmpl.layers.reduce((m, l) => Math.max(m, parseInt(l.id) || 0), 0);
+    _id = maxId + 1;
+    const scaled = scaleLayers(tmpl.layers, tmpl.savedW, tmpl.savedH, canvasW, canvasH);
+    setLayers(scaled);
+    setSelectedId(null);
+    setView("editor");
+  };
+
+  const deleteCustomTemplate = (id) => {
+    setCustomTemplates(prev => {
+      const next = prev.filter(t => t.id !== id);
+      try { localStorage.setItem("atlas_custom_templates", JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
+  };
+
   // ─── Styles ───
   const S = {
     page: { height: "100vh", background: "#0a0a0f", color: "#e2e8f0", fontFamily: "'Inter', -apple-system, sans-serif", display: "flex", flexDirection: "column", overflow: "hidden" },
@@ -1300,6 +1354,36 @@ function AtlasPostCreator({ onImageCreated }) {
 
         {/* ── Template grid ── */}
         <div style={{ padding: "20px 16px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+
+          {/* Saved templates */}
+          {customTemplates.length > 0 && (<>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.08em" }}>Your Templates</div>
+              <div style={{ fontSize: 9, color: "#334155", background: "#1e293b", borderRadius: 10, padding: "1px 7px", fontWeight: 600 }}>{customTemplates.length}</div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 28 }}>
+              {customTemplates.map(tmpl => (
+                <div key={tmpl.id} style={{ cursor: "pointer", position: "relative" }} onClick={() => loadCustomTemplate(tmpl)}>
+                  <div style={{ borderRadius: 10, overflow: "hidden", border: "2px solid #1e3a5f", transition: "border-color 0.15s", aspectRatio: `${tmpl.savedW}/${tmpl.savedH}`, position: "relative", background: "#111" }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = "#3b82f6"}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = "#1e3a5f"}
+                  >
+                    {tmpl.thumb
+                      ? <img src={tmpl.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      : <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg, #1e293b, #0f172a)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📐</div>
+                    }
+                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "20px 8px 8px", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#fff" }}>{tmpl.name}</div>
+                      <div style={{ fontSize: 8, color: "#94a3b8" }}>{tmpl.desc}</div>
+                    </div>
+                    <div style={{ position: "absolute", top: 6, left: 6, background: "rgba(59,130,246,0.85)", borderRadius: 4, padding: "2px 5px", fontSize: 8, fontWeight: 700, color: "#fff" }}>SAVED</div>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); deleteCustomTemplate(tmpl.id); }} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 20, height: 20, color: "#f87171", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }} title="Delete template">×</button>
+                </div>
+              ))}
+            </div>
+          </>)}
+
           <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Templates — {canvasSize.label} ({canvasSize.ratio})</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
             {TEMPLATES.map(tmpl => (
@@ -1666,6 +1750,10 @@ function AtlasPostCreator({ onImageCreated }) {
             )}
           </div>
         )}
+        <button onClick={() => { setShowSaveModal(true); setShowSizePicker(false); setShowTextMenu(false); }} style={{ ...S.btn, padding: "5px 10px", border: "1px solid #334155", borderRadius: 7, fontSize: 11, fontWeight: 600, color: "#94a3b8", gap: 5 }} title="Save current design as a reusable template">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save template
+        </button>
         <button onClick={() => {
           if (onImageCreated && canvasRef.current) {
             html2canvas(canvasRef.current, { scale: 1, useCORS: true, allowTaint: true, backgroundColor: null })
@@ -1675,6 +1763,28 @@ function AtlasPostCreator({ onImageCreated }) {
           {Icons.send} {onImageCreated ? "Use This Image ←" : "Publish"}
         </button>
       </div>
+
+      {/* ── Save Template Modal ── */}
+      {showSaveModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowSaveModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#13151f", border: "1px solid #1e293b", borderRadius: 14, width: 360, padding: 24, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }}>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>Save as Template</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: -8 }}>This design will appear in your template gallery so you can reuse the layout.</div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Template Name *</label>
+              <input autoFocus value={saveTemplateName} onChange={e => setSaveTemplateName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveAsTemplate()} placeholder="e.g. VDP Surge Alert" style={{ width: "100%", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Description</label>
+              <input value={saveTemplateDesc} onChange={e => setSaveTemplateDesc(e.target.value)} placeholder="e.g. Dark background, KPI highlight" style={{ width: "100%", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button onClick={() => setShowSaveModal(false)} style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "9px 0", color: "#94a3b8", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+              <button onClick={saveAsTemplate} disabled={!saveTemplateName.trim()} style={{ flex: 2, background: saveTemplateName.trim() ? "linear-gradient(135deg, #3b82f6, #8b5cf6)" : "#1e293b", border: "none", borderRadius: 8, padding: "9px 0", color: saveTemplateName.trim() ? "#fff" : "#475569", fontSize: 13, fontWeight: 700, cursor: saveTemplateName.trim() ? "pointer" : "default" }}>Save Template</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
         {/* LEFT: Layers */}
         <div style={{ width: 200, borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", background: "#0d0f17", flexShrink: 0 }}>
