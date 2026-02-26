@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atlas Post Creator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #root { width: 100%; height: 100%; background: #0a0a0f; overflow: hidden; }
+  </style>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-type="module">
+const { useState, useRef, useCallback, useEffect, useMemo } = React;
+
+// ════════════════════════════════════════
+//  ATLAS POST CREATOR v2.1 — Layered Editor
+//  All imagery generated procedurally (no external URLs)
+// ════════════════════════════════════════
+
+const CANVAS_W = 420;
+const CANVAS_H = 520;
+
+// ─── SVG Icons ───
+const Icons = {
+  back: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 18-6-6 6-6"/></svg>,
+  plus: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>,
+  text: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>,
+  image: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>,
+  shape: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>,
+  eye: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>,
+  eyeOff: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>,
+  trash: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>,
+  lock: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+  unlock: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>,
+  up: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m18 15-6-6-6 6"/></svg>,
+  down: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>,
+  send: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>,
+  duplicate: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>,
+  check: <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>,
+};
+
+// ═══════════════════════════════════════════
+//  PROCEDURAL IMAGE GENERATION (Canvas-based)
+// ═══════════════════════════════════════════
+
+function generateImage(type, w = 800, h = 600) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+
+  if (type === "mountains") {
+    // Sky gradient
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, "#0c1445"); sky.addColorStop(0.4, "#1a3a6c"); sky.addColorStop(0.7, "#d4756b"); sky.addColorStop(1, "#f4a261");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h);
+    // Stars
+    for (let i = 0; i < 80; i++) {
+      ctx.beginPath(); ctx.arc(Math.random() * w, Math.random() * h * 0.5, Math.random() * 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.8})`; ctx.fill();
+    }
+    // Mountains
+    const drawMtn = (baseY, color, jaggedness, count) => {
+      ctx.beginPath(); ctx.moveTo(0, h);
+      for (let x = 0; x <= w; x += 3) {
+        let y = baseY;
+        for (let k = 1; k <= count; k++) y += Math.sin(x * 0.003 * k + k * 2) * jaggedness / k + Math.sin(x * 0.01 * k) * jaggedness * 0.3 / k;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h); ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+    };
+    drawMtn(h * 0.35, "#1a1a3e", 100, 4);
+    drawMtn(h * 0.5, "#12122e", 70, 3);
+    drawMtn(h * 0.65, "#0a0a1e", 50, 3);
+  }
+  else if (type === "ocean") {
+    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+    sky.addColorStop(0, "#87CEEB"); sky.addColorStop(1, "#e0f0ff");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h * 0.5);
+    const water = ctx.createLinearGradient(0, h * 0.45, 0, h);
+    water.addColorStop(0, "#1a6b8a"); water.addColorStop(0.5, "#0e4b6b"); water.addColorStop(1, "#072a40");
+    ctx.fillStyle = water; ctx.fillRect(0, h * 0.45, w, h * 0.55);
+    // Sun
+    const grd = ctx.createRadialGradient(w * 0.7, h * 0.35, 0, w * 0.7, h * 0.35, 80);
+    grd.addColorStop(0, "#fff8e1"); grd.addColorStop(0.3, "#ffe082"); grd.addColorStop(1, "transparent");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    // Waves
+    for (let row = 0; row < 15; row++) {
+      ctx.beginPath();
+      const baseY = h * 0.48 + row * 12;
+      for (let x = 0; x <= w; x += 2) {
+        ctx.lineTo(x, baseY + Math.sin(x * 0.015 + row * 1.5) * 6 + Math.sin(x * 0.04 + row) * 3);
+      }
+      ctx.strokeStyle = `rgba(255,255,255,${0.12 - row * 0.006})`; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+  else if (type === "forest") {
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#1a2e1a"); bg.addColorStop(0.5, "#0d1f0d"); bg.addColorStop(1, "#050e05");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    // Light rays
+    for (let i = 0; i < 5; i++) {
+      ctx.save(); ctx.globalAlpha = 0.06;
+      ctx.beginPath(); const cx = w * 0.3 + i * 80;
+      ctx.moveTo(cx - 5, 0); ctx.lineTo(cx - 40, h); ctx.lineTo(cx + 40, h); ctx.lineTo(cx + 5, 0); ctx.closePath();
+      ctx.fillStyle = "#a0d468"; ctx.fill(); ctx.restore();
+    }
+    // Trees
+    for (let i = 0; i < 30; i++) {
+      const tx = Math.random() * w, ty = h * 0.3 + Math.random() * h * 0.5;
+      const th = 60 + Math.random() * 120, tw = 15 + Math.random() * 20;
+      ctx.fillStyle = `rgba(${10 + Math.random() * 20}, ${30 + Math.random() * 30}, ${10 + Math.random() * 15}, 0.8)`;
+      // Trunk
+      ctx.fillRect(tx - 3, ty, 6, th * 0.4);
+      // Crown
+      ctx.beginPath(); ctx.moveTo(tx - tw, ty + 10); ctx.lineTo(tx, ty - th * 0.6); ctx.lineTo(tx + tw, ty + 10); ctx.closePath();
+      ctx.fillStyle = `rgba(${15 + Math.random() * 30}, ${50 + Math.random() * 40}, ${15 + Math.random() * 20}, 0.9)`; ctx.fill();
+    }
+    // Mist
+    ctx.fillStyle = "rgba(200,220,200,0.04)"; ctx.fillRect(0, h * 0.4, w, h * 0.2);
+  }
+  else if (type === "city") {
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#0a0a1a"); bg.addColorStop(0.6, "#141428"); bg.addColorStop(1, "#1a1a30");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    // Stars
+    for (let i = 0; i < 50; i++) {
+      ctx.beginPath(); ctx.arc(Math.random() * w, Math.random() * h * 0.4, Math.random() * 1, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.6})`; ctx.fill();
+    }
+    // Buildings
+    for (let i = 0; i < 40; i++) {
+      const bw = 15 + Math.random() * 40, bh = 80 + Math.random() * 280;
+      const bx = i * (w / 35) + Math.random() * 10 - 20;
+      const by = h - bh;
+      const shade = 15 + Math.random() * 25;
+      ctx.fillStyle = `rgb(${shade}, ${shade}, ${shade + 10})`;
+      ctx.fillRect(bx, by, bw, bh);
+      // Windows
+      for (let wy = by + 8; wy < h - 10; wy += 12) {
+        for (let wx = bx + 4; wx < bx + bw - 4; wx += 8) {
+          if (Math.random() > 0.3) {
+            ctx.fillStyle = Math.random() > 0.5 ? `rgba(255,220,100,${0.3 + Math.random() * 0.5})` : `rgba(100,180,255,${0.1 + Math.random() * 0.2})`;
+            ctx.fillRect(wx, wy, 4, 6);
+          }
+        }
+      }
+    }
+    // Ground glow
+    const glow = ctx.createRadialGradient(w * 0.5, h, 0, w * 0.5, h, h * 0.4);
+    glow.addColorStop(0, "rgba(255,150,50,0.1)"); glow.addColorStop(1, "transparent");
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "abstract1") {
+    ctx.fillStyle = "#0a0a1e"; ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 8; i++) {
+      const cx = Math.random() * w, cy = Math.random() * h, r = 100 + Math.random() * 200;
+      const colors = ["#6366f1", "#8b5cf6", "#ec4899", "#3b82f6", "#06b6d4"];
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grd.addColorStop(0, colors[i % colors.length] + "40"); grd.addColorStop(1, "transparent");
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    }
+    // Noise dots
+    for (let i = 0; i < 200; i++) {
+      ctx.beginPath(); ctx.arc(Math.random() * w, Math.random() * h, Math.random() * 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.15})`; ctx.fill();
+    }
+  }
+  else if (type === "abstract2") {
+    // Warm gradient mesh
+    const bg = ctx.createLinearGradient(0, 0, w, h);
+    bg.addColorStop(0, "#ff6b6b"); bg.addColorStop(0.3, "#ffa502"); bg.addColorStop(0.6, "#ff6348"); bg.addColorStop(1, "#ff4757");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 6; i++) {
+      const grd = ctx.createRadialGradient(Math.random() * w, Math.random() * h, 0, Math.random() * w, Math.random() * h, 200 + Math.random() * 200);
+      grd.addColorStop(0, ["#ffd32a30", "#ff6b6b30", "#7bed9f30", "#70a1ff30"][i % 4]); grd.addColorStop(1, "transparent");
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    }
+  }
+  else if (type === "marble") {
+    ctx.fillStyle = "#f0ece3"; ctx.fillRect(0, 0, w, h);
+    // Marble veins
+    for (let v = 0; v < 15; v++) {
+      ctx.beginPath();
+      let x = Math.random() * w, y = Math.random() * h;
+      ctx.moveTo(x, y);
+      for (let s = 0; s < 60; s++) {
+        x += Math.random() * 30 - 12; y += Math.random() * 20 - 5;
+        ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = `rgba(180,170,155,${0.1 + Math.random() * 0.2})`; ctx.lineWidth = 0.5 + Math.random() * 2; ctx.stroke();
+    }
+    // Gold flecks
+    for (let i = 0; i < 30; i++) {
+      ctx.beginPath(); ctx.arc(Math.random() * w, Math.random() * h, Math.random() * 3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200,170,100,${Math.random() * 0.3})`; ctx.fill();
+    }
+  }
+  else if (type === "darkMetal") {
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#1a1a1a"); bg.addColorStop(0.5, "#2a2a2a"); bg.addColorStop(1, "#1a1a1a");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    // Brushed metal lines
+    for (let y2 = 0; y2 < h; y2 += 2) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.03})`; ctx.fillRect(0, y2, w, 1);
+    }
+    // Highlight
+    const hl = ctx.createRadialGradient(w * 0.3, h * 0.3, 0, w * 0.3, h * 0.3, w * 0.6);
+    hl.addColorStop(0, "rgba(255,255,255,0.05)"); hl.addColorStop(1, "transparent");
+    ctx.fillStyle = hl; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "desert") {
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#1a0f05"); bg.addColorStop(0.3, "#4a2512"); bg.addColorStop(0.6, "#c2703a"); bg.addColorStop(1, "#dba06b");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    // Sun
+    const sun = ctx.createRadialGradient(w * 0.5, h * 0.25, 0, w * 0.5, h * 0.25, 120);
+    sun.addColorStop(0, "rgba(255,200,100,0.4)"); sun.addColorStop(1, "transparent");
+    ctx.fillStyle = sun; ctx.fillRect(0, 0, w, h);
+    // Dunes
+    for (let d = 0; d < 5; d++) {
+      ctx.beginPath();
+      const baseY = h * 0.55 + d * 30;
+      ctx.moveTo(0, h);
+      for (let x = 0; x <= w; x += 2) {
+        const y = baseY + Math.sin(x * 0.005 + d * 3) * 40 + Math.sin(x * 0.012 + d) * 20;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h); ctx.closePath();
+      const shade = 160 + d * 15;
+      ctx.fillStyle = `rgb(${shade}, ${shade - 40}, ${shade - 80})`; ctx.fill();
+    }
+  }
+  else if (type === "bwArch") {
+    ctx.fillStyle = "#e8e8e8"; ctx.fillRect(0, 0, w, h);
+    // Geometric building shapes in B&W
+    const shapes = [];
+    for (let i = 0; i < 12; i++) {
+      shapes.push({ x: Math.random() * w * 0.8, y: Math.random() * h * 0.6, w: 30 + Math.random() * 120, h: 80 + Math.random() * 300 });
+    }
+    shapes.sort((a, b) => b.h - a.h);
+    shapes.forEach((s, i) => {
+      const g = 40 + i * 12;
+      ctx.fillStyle = `rgb(${g},${g},${g})`; ctx.fillRect(s.x, s.y, s.w, s.h);
+      // Windows
+      for (let wy = s.y + 10; wy < s.y + s.h - 10; wy += 18) {
+        for (let wx = s.x + 6; wx < s.x + s.w - 6; wx += 14) {
+          ctx.fillStyle = `rgba(200,200,200,${Math.random() * 0.5})`; ctx.fillRect(wx, wy, 8, 12);
+        }
+      }
+    });
+    // Vignette
+    const vig = ctx.createRadialGradient(w / 2, h / 2, w * 0.2, w / 2, h / 2, w * 0.7);
+    vig.addColorStop(0, "transparent"); vig.addColorStop(1, "rgba(0,0,0,0.4)");
+    ctx.fillStyle = vig; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "car") {
+    // Dark luxury automotive feel
+    const bg = ctx.createLinearGradient(0, 0, w, h);
+    bg.addColorStop(0, "#0a0a0a"); bg.addColorStop(1, "#1a1a1a");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    // Reflective surface
+    const ref1 = ctx.createLinearGradient(0, h * 0.6, 0, h);
+    ref1.addColorStop(0, "rgba(30,30,30,1)"); ref1.addColorStop(1, "rgba(15,15,15,1)");
+    ctx.fillStyle = ref1; ctx.fillRect(0, h * 0.6, w, h * 0.4);
+    // Car silhouette (stylized)
+    ctx.beginPath();
+    ctx.moveTo(w * 0.1, h * 0.58); ctx.quadraticCurveTo(w * 0.2, h * 0.35, w * 0.35, h * 0.32);
+    ctx.quadraticCurveTo(w * 0.45, h * 0.28, w * 0.55, h * 0.28);
+    ctx.quadraticCurveTo(w * 0.7, h * 0.28, w * 0.75, h * 0.38);
+    ctx.quadraticCurveTo(w * 0.85, h * 0.42, w * 0.92, h * 0.48);
+    ctx.lineTo(w * 0.95, h * 0.58); ctx.closePath();
+    ctx.fillStyle = "#222"; ctx.fill();
+    // Headlight glow
+    const hl = ctx.createRadialGradient(w * 0.9, h * 0.5, 0, w * 0.9, h * 0.5, 60);
+    hl.addColorStop(0, "rgba(255,200,100,0.3)"); hl.addColorStop(1, "transparent");
+    ctx.fillStyle = hl; ctx.fillRect(0, 0, w, h);
+    // Reflection line
+    ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, h * 0.6); ctx.lineTo(w, h * 0.6); ctx.stroke();
+  }
+  else if (type === "geometric") {
+    ctx.fillStyle = "#f8fafc"; ctx.fillRect(0, 0, w, h);
+    const colors = ["#3b82f620", "#8b5cf620", "#06b6d420", "#f59e0b20", "#ef444420"];
+    for (let i = 0; i < 20; i++) {
+      ctx.save(); ctx.translate(Math.random() * w, Math.random() * h);
+      ctx.rotate(Math.random() * Math.PI);
+      const size = 40 + Math.random() * 150;
+      ctx.fillStyle = colors[i % colors.length];
+      if (Math.random() > 0.5) { ctx.fillRect(-size / 2, -size / 2, size, size); }
+      else { ctx.beginPath(); ctx.arc(0, 0, size / 2, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    }
+  }
+  else if (type === "gradient1") {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, "#667eea"); g.addColorStop(0.5, "#764ba2"); g.addColorStop(1, "#f093fb");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "gradient2") {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, "#0f2027"); g.addColorStop(0.5, "#203a43"); g.addColorStop(1, "#2c5364");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "gradient3") {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, "#ff9a9e"); g.addColorStop(0.5, "#fad0c4"); g.addColorStop(1, "#ffecd2");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "concrete") {
+    ctx.fillStyle = "#d4d0c8"; ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 50000; i++) {
+      const x = Math.random() * w, y = Math.random() * h;
+      ctx.fillStyle = `rgba(${Math.random() > 0.5 ? 0 : 255},${Math.random() > 0.5 ? 0 : 255},${Math.random() > 0.5 ? 0 : 255},${Math.random() * 0.04})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  else if (type === "grittyBW") {
+    // High contrast B&W with heavy grain — like a zine or xerox
+    ctx.fillStyle = "#e8e4df"; ctx.fillRect(0, 0, w, h);
+    // Random ink blotches
+    for (let i = 0; i < 12; i++) {
+      const cx = Math.random() * w, cy = Math.random() * h;
+      const r = 30 + Math.random() * 120;
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grd.addColorStop(0, `rgba(20,20,20,${0.15 + Math.random() * 0.4})`);
+      grd.addColorStop(1, "transparent");
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    }
+    // Heavy noise grain
+    for (let i = 0; i < 80000; i++) {
+      const x = Math.random() * w, y = Math.random() * h;
+      const v = Math.random() > 0.5 ? 0 : 200 + Math.random() * 55;
+      ctx.fillStyle = `rgba(${v},${v},${v},${Math.random() * 0.08})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+    // Scratches
+    for (let i = 0; i < 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(Math.random() * w, Math.random() * h);
+      ctx.lineTo(Math.random() * w, Math.random() * h);
+      ctx.strokeStyle = `rgba(0,0,0,${0.03 + Math.random() * 0.06})`;
+      ctx.lineWidth = 0.5 + Math.random(); ctx.stroke();
+    }
+  }
+  else if (type === "neonGrid") {
+    // Retro neon grid on black
+    ctx.fillStyle = "#050508"; ctx.fillRect(0, 0, w, h);
+    // Horizontal perspective grid
+    ctx.save();
+    for (let i = 0; i < 30; i++) {
+      const y = h * 0.5 + i * i * 0.7;
+      if (y > h) break;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y);
+      ctx.strokeStyle = `rgba(255,0,100,${0.15 - i * 0.004})`; ctx.lineWidth = 1; ctx.stroke();
+    }
+    // Vertical lines
+    for (let i = 0; i < 15; i++) {
+      const x = w * 0.5 + (i - 7) * 35;
+      ctx.beginPath(); ctx.moveTo(w * 0.5, h * 0.5); ctx.lineTo(x + (i - 7) * 20, h);
+      ctx.strokeStyle = "rgba(255,0,100,0.08)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.restore();
+    // Glow line at horizon
+    const hGlow = ctx.createRadialGradient(w * 0.5, h * 0.5, 0, w * 0.5, h * 0.5, w * 0.5);
+    hGlow.addColorStop(0, "rgba(255,0,150,0.15)"); hGlow.addColorStop(1, "transparent");
+    ctx.fillStyle = hGlow; ctx.fillRect(0, 0, w, h);
+    // Sun
+    const sun = ctx.createRadialGradient(w * 0.5, h * 0.4, 0, w * 0.5, h * 0.4, 100);
+    sun.addColorStop(0, "rgba(255,100,0,0.3)"); sun.addColorStop(0.5, "rgba(255,0,100,0.1)"); sun.addColorStop(1, "transparent");
+    ctx.fillStyle = sun; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "ripped") {
+    // Collage / torn paper texture
+    ctx.fillStyle = "#1a1a1a"; ctx.fillRect(0, 0, w, h);
+    // Torn paper strips
+    const stripColors = ["#f5f0e8", "#e8e0d0", "#d4cfc4", "#c8c0b0"];
+    for (let s = 0; s < 4; s++) {
+      ctx.save();
+      const sx = Math.random() * w * 0.5, sy = s * (h / 4) + Math.random() * 30;
+      const sw = 100 + Math.random() * 200, sh = 80 + Math.random() * 100;
+      ctx.translate(sx, sy);
+      ctx.rotate((Math.random() - 0.5) * 0.3);
+      // Torn edge
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      for (let x = 0; x <= sw; x += 3) ctx.lineTo(x, Math.random() * 6);
+      ctx.lineTo(sw, sh);
+      for (let x = sw; x >= 0; x -= 3) ctx.lineTo(x, sh + Math.random() * 6);
+      ctx.closePath();
+      ctx.fillStyle = stripColors[s]; ctx.fill();
+      // Faint text lines on paper
+      for (let l = 15; l < sh; l += 8) {
+        ctx.fillStyle = "rgba(0,0,0,0.06)";
+        ctx.fillRect(10, l, sw * (0.4 + Math.random() * 0.5), 2);
+      }
+      ctx.restore();
+    }
+    // Tape strip
+    ctx.save();
+    ctx.translate(w * 0.5, h * 0.3);
+    ctx.rotate(-0.1);
+    ctx.fillStyle = "rgba(255,230,150,0.25)";
+    ctx.fillRect(-60, -8, 120, 16);
+    ctx.restore();
+  }
+  else if (type === "halftone") {
+    // Bold halftone pop-art style
+    const bg = ctx.createLinearGradient(0, 0, w, h);
+    bg.addColorStop(0, "#ff2d55"); bg.addColorStop(1, "#ff6b35");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    // Halftone dots
+    const dotSpacing = 8;
+    for (let y = 0; y < h; y += dotSpacing) {
+      for (let x = 0; x < w; x += dotSpacing) {
+        const dist = Math.sqrt((x - w * 0.5) ** 2 + (y - h * 0.3) ** 2);
+        const size = Math.max(0.5, 3.5 - dist * 0.005);
+        ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,0,0,0.15)"; ctx.fill();
+      }
+    }
+    // Big circle accent
+    ctx.beginPath(); ctx.arc(w * 0.7, h * 0.3, 120, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fill();
+  }
+  else if (type === "brutalist") {
+    // Raw concrete brutalist with hard shapes
+    ctx.fillStyle = "#c8c2b8"; ctx.fillRect(0, 0, w, h);
+    // Concrete noise
+    for (let i = 0; i < 30000; i++) {
+      const v = 150 + Math.random() * 60;
+      ctx.fillStyle = `rgba(${v},${v - 10},${v - 20},0.05)`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 1, 1);
+    }
+    // Hard geometric blocks
+    const blocks = [
+      { x: 0, y: 0, w: w * 0.45, h: h * 0.5, c: "#1a1a1a" },
+      { x: w * 0.55, y: h * 0.4, w: w * 0.45, h: h * 0.6, c: "#2a2520" },
+    ];
+    blocks.forEach(b => { ctx.fillStyle = b.c; ctx.fillRect(b.x, b.y, b.w, b.h); });
+    // Rough horizontal lines
+    for (let y = 0; y < h; y += 3) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.02})`;
+      ctx.fillRect(0, y, w, 1);
+    }
+  }
+  else if (type === "fabricBlack") {
+    // Dark garment / fabric texture — jersey knit feel
+    ctx.fillStyle = "#111111"; ctx.fillRect(0, 0, w, h);
+    // Subtle fabric weave texture
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x += 2) {
+        const v = (Math.sin(x * 0.8 + y * 0.3) * 6 + Math.sin(y * 1.2) * 4);
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0, v * 0.006)})`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    // Subtle horizontal ribbing
+    for (let y = 0; y < h; y += 4) {
+      ctx.fillStyle = "rgba(255,255,255,0.015)";
+      ctx.fillRect(0, y, w, 1);
+    }
+    // Very faint center highlight — like light hitting a shirt
+    const bodyGlow = ctx.createRadialGradient(w * 0.5, h * 0.4, 0, w * 0.5, h * 0.4, w * 0.5);
+    bodyGlow.addColorStop(0, "rgba(255,255,255,0.04)");
+    bodyGlow.addColorStop(1, "rgba(0,0,0,0.15)");
+    ctx.fillStyle = bodyGlow; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "fabricWhite") {
+    // Light garment / fabric texture — clean white tee
+    ctx.fillStyle = "#f0ece8"; ctx.fillRect(0, 0, w, h);
+    // Subtle fabric grain
+    for (let i = 0; i < 60000; i++) {
+      const x = Math.random() * w, y = Math.random() * h;
+      const v = Math.random() * 20;
+      ctx.fillStyle = `rgba(${v},${v},${v},0.025)`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+    // Light shadow edges — like shirt curvature
+    const edgeShadow = ctx.createRadialGradient(w * 0.5, h * 0.5, w * 0.2, w * 0.5, h * 0.5, w * 0.7);
+    edgeShadow.addColorStop(0, "rgba(255,255,255,0.1)");
+    edgeShadow.addColorStop(1, "rgba(0,0,0,0.1)");
+    ctx.fillStyle = edgeShadow; ctx.fillRect(0, 0, w, h);
+  }
+  else if (type === "carShowroom") {
+    // Dramatic showroom floor — glossy dark with car-shaped light cone
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#0d0d0d"); bg.addColorStop(0.55, "#181818"); bg.addColorStop(1, "#0a0a0a");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    // Floor reflection plane
+    const floor = ctx.createLinearGradient(0, h * 0.58, 0, h);
+    floor.addColorStop(0, "#1a1a1a"); floor.addColorStop(1, "#0d0d0d");
+    ctx.fillStyle = floor; ctx.fillRect(0, h * 0.58, w, h * 0.42);
+    // Glossy floor lines
+    for (let i = 0; i < 6; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.6 + i * 12);
+      ctx.lineTo(w, h * 0.6 + i * 12);
+      ctx.strokeStyle = `rgba(255,255,255,${0.03 - i * 0.004})`; ctx.lineWidth = 1; ctx.stroke();
+    }
+    // Car silhouette (sleek sedan profile)
+    ctx.save();
+    ctx.translate(w * 0.08, h * 0.28);
+    const cw = w * 0.84, ch = h * 0.3;
+    ctx.beginPath();
+    // Body lower
+    ctx.moveTo(0, ch * 0.7);
+    ctx.lineTo(cw * 0.05, ch * 0.72);
+    // Rear wheel arch
+    ctx.lineTo(cw * 0.12, ch * 0.72);
+    ctx.arc(cw * 0.18, ch * 0.72, cw * 0.06, Math.PI, 0, true);
+    ctx.lineTo(cw * 0.3, ch * 0.72);
+    // Body mid
+    ctx.lineTo(cw * 0.32, ch * 0.4);
+    // Roofline
+    ctx.bezierCurveTo(cw * 0.35, ch * 0.05, cw * 0.42, 0, cw * 0.5, 0);
+    ctx.bezierCurveTo(cw * 0.6, 0, cw * 0.68, ch * 0.05, cw * 0.7, ch * 0.38);
+    ctx.lineTo(cw * 0.72, ch * 0.4);
+    // Front slope
+    ctx.lineTo(cw * 0.78, ch * 0.72);
+    // Front wheel arch
+    ctx.arc(cw * 0.84, ch * 0.72, cw * 0.06, Math.PI, 0, true);
+    ctx.lineTo(cw, ch * 0.72);
+    ctx.lineTo(cw, ch * 0.7);
+    // Undercarriage
+    ctx.lineTo(0, ch * 0.7);
+    ctx.closePath();
+    ctx.fillStyle = "#1e1e1e"; ctx.fill();
+    // Car body highlight — light stripe along roofline
+    ctx.beginPath();
+    ctx.moveTo(cw * 0.32, ch * 0.42);
+    ctx.bezierCurveTo(cw * 0.38, ch * 0.08, cw * 0.45, ch * 0.02, cw * 0.5, ch * 0.02);
+    ctx.bezierCurveTo(cw * 0.58, ch * 0.02, cw * 0.65, ch * 0.08, cw * 0.7, ch * 0.42);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+    // Wheels
+    const drawWheel = (cx, cy, r) => {
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#0a0a0a"; ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.25, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.1)"; ctx.fill();
+    };
+    drawWheel(w * 0.26, h * 0.575, 28);
+    drawWheel(w * 0.74, h * 0.575, 28);
+    // Spotlight cone from above
+    const spot = ctx.createRadialGradient(w * 0.5, 0, 0, w * 0.5, h * 0.4, w * 0.55);
+    spot.addColorStop(0, "rgba(255,220,150,0.12)");
+    spot.addColorStop(0.4, "rgba(255,200,100,0.04)");
+    spot.addColorStop(1, "transparent");
+    ctx.fillStyle = spot; ctx.fillRect(0, 0, w, h);
+    // Headlight glow
+    const hLight = ctx.createRadialGradient(w * 0.85, h * 0.48, 0, w * 0.85, h * 0.48, 50);
+    hLight.addColorStop(0, "rgba(200,220,255,0.3)"); hLight.addColorStop(1, "transparent");
+    ctx.fillStyle = hLight; ctx.fillRect(0, 0, w, h);
+    // Floor reflection of car
+    ctx.save(); ctx.scale(1, -0.3); ctx.translate(0, -h * 3.15);
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = "#333"; ctx.fillRect(w * 0.08, h * 0.28, w * 0.84, h * 0.3);
+    ctx.restore();
+  }
+  else if (type === "racetrack") {
+    // Aerial racetrack / motion blur feel
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#0a1628"); bg.addColorStop(1, "#051020");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    // Track surface
+    ctx.beginPath();
+    ctx.ellipse(w * 0.5, h * 0.7, w * 0.42, h * 0.35, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#141414"; ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.lineWidth = 3; ctx.stroke();
+    // Track markings
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const x = w * 0.5 + Math.cos(a) * w * 0.42;
+      const y = h * 0.7 + Math.sin(a) * h * 0.35;
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fill();
+    }
+    // Speed lines
+    for (let i = 0; i < 20; i++) {
+      const sx = Math.random() * w, sy = Math.random() * h * 0.5;
+      const len = 30 + Math.random() * 80;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + len, sy + len * 0.2);
+      ctx.strokeStyle = `rgba(255,255,255,${0.03 + Math.random() * 0.04})`;
+      ctx.lineWidth = 0.5 + Math.random(); ctx.stroke();
+    }
+    // Center glow
+    const glow = ctx.createRadialGradient(w * 0.5, h * 0.3, 0, w * 0.5, h * 0.3, w * 0.4);
+    glow.addColorStop(0, "rgba(255,100,0,0.08)"); glow.addColorStop(1, "transparent");
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+  }
+
+  return c.toDataURL("image/jpeg", 0.85);
+}
+
+// ─── Photo Library (generated on first use) ───
+const PHOTO_TYPES = [
+  { id: "mountains", label: "Mountain Peaks", cat: "nature", type: "mountains" },
+  { id: "ocean", label: "Ocean View", cat: "nature", type: "ocean" },
+  { id: "forest", label: "Deep Forest", cat: "nature", type: "forest" },
+  { id: "desert", label: "Desert Dunes", cat: "nature", type: "desert" },
+  { id: "city", label: "City Night", cat: "urban", type: "city" },
+  { id: "bwArch", label: "B&W Architecture", cat: "bw", type: "bwArch" },
+  { id: "abstract1", label: "Cosmic Glow", cat: "abstract", type: "abstract1" },
+  { id: "abstract2", label: "Warm Gradient", cat: "abstract", type: "abstract2" },
+  { id: "marble", label: "Marble Texture", cat: "texture", type: "marble" },
+  { id: "darkMetal", label: "Dark Metal", cat: "texture", type: "darkMetal" },
+  { id: "concrete", label: "Concrete", cat: "texture", type: "concrete" },
+  { id: "car", label: "Luxury Auto", cat: "auto", type: "car" },
+  { id: "geometric", label: "Geometric", cat: "abstract", type: "geometric" },
+  { id: "gradient1", label: "Purple Haze", cat: "gradient", type: "gradient1" },
+  { id: "gradient2", label: "Deep Teal", cat: "gradient", type: "gradient2" },
+  { id: "gradient3", label: "Peach Blush", cat: "gradient", type: "gradient3" },
+  { id: "grittyBW", label: "Gritty Zine", cat: "bw", type: "grittyBW" },
+  { id: "neonGrid", label: "Neon Grid", cat: "abstract", type: "neonGrid" },
+  { id: "ripped", label: "Torn Collage", cat: "texture", type: "ripped" },
+  { id: "halftone", label: "Halftone Pop", cat: "abstract", type: "halftone" },
+  { id: "brutalist", label: "Brutalist", cat: "texture", type: "brutalist" },
+  { id: "fabricBlack", label: "Black Tee", cat: "texture", type: "fabricBlack" },
+  { id: "fabricWhite", label: "White Tee", cat: "texture", type: "fabricWhite" },
+  { id: "carShowroom", label: "Showroom", cat: "auto", type: "carShowroom" },
+  { id: "racetrack", label: "Racetrack", cat: "auto", type: "racetrack" },
+];
+
+const PHOTO_CATEGORIES = [
+  { id: "all", label: "All" },
+  { id: "nature", label: "Nature" },
+  { id: "urban", label: "Urban" },
+  { id: "abstract", label: "Abstract" },
+  { id: "texture", label: "Textures" },
+  { id: "auto", label: "Auto" },
+  { id: "gradient", label: "Gradients" },
+  { id: "bw", label: "B&W" },
+];
+
+// ─── Unique ID generator ───
+let _id = 100;
+const uid = () => `layer_${++_id}`;
+
+// ─── Layer factory ───
+function makeLayer(type, overrides = {}) {
+  const base = { id: uid(), type, x: 20, y: 20, width: 200, height: 50, visible: true, locked: false, name: type, ...overrides };
+  if (type === "text") {
+    return { ...base, name: overrides.name || "Text", text: overrides.text || "New Text", fontSize: overrides.fontSize || 28, fontWeight: overrides.fontWeight || "700", fontFamily: overrides.fontFamily || "'Inter', sans-serif", color: overrides.color || "#ffffff", textAlign: overrides.textAlign || "left", lineHeight: overrides.lineHeight || 1.2, letterSpacing: overrides.letterSpacing || 0, textTransform: overrides.textTransform || "none", fontStyle: overrides.fontStyle || "normal" };
+  }
+  if (type === "image") {
+    return { ...base, name: overrides.name || "Image", src: overrides.src || "", objectFit: overrides.objectFit || "cover", borderRadius: overrides.borderRadius || 0, opacity: overrides.opacity ?? 1, filter: overrides.filter || "none" };
+  }
+  if (type === "shape") {
+    return { ...base, name: overrides.name || "Shape", width: overrides.width || 200, height: overrides.height || 200, shapeType: overrides.shapeType || "rect", fill: overrides.fill || "#3b82f6", opacity: overrides.opacity ?? 1, borderRadius: overrides.borderRadius || 0, borderWidth: overrides.borderWidth || 0, borderColor: overrides.borderColor || "#ffffff" };
+  }
+  if (type === "bg") {
+    return { ...base, name: "Background", x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, locked: true, bgType: overrides.bgType || "solid", bgColor: overrides.bgColor || "#0f172a", bgGradient: overrides.bgGradient || "linear-gradient(135deg, #0f172a, #334155)", bgImage: overrides.bgImage || "", bgImageFit: overrides.bgImageFit || "cover", bgOverlay: overrides.bgOverlay || "none", bgOverlayOpacity: overrides.bgOverlayOpacity ?? 0.4, filter: overrides.filter || "none" };
+  }
+  return base;
+}
+
+// ─── Template Definitions (images generated lazily) ───
+const TEMPLATES = [
+  {
+    id: "mountain-bold",
+    name: "Mountain Vista",
+    desc: "Full-bleed photo, bold white type",
+    thumbType: "mountains",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img, bgOverlay: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.3) 100%)", bgOverlayOpacity: 1 }),
+      makeLayer("text", { name: "Badge", text: "ATLAS AI INSIGHT", x: 28, y: 30, width: 200, height: 24, fontSize: 11, fontWeight: "700", color: "#60a5fa", letterSpacing: 3, textTransform: "uppercase" }),
+      makeLayer("text", { name: "Headline", text: "VDP Views\nSurge Detected", x: 28, y: 180, width: 340, height: 130, fontSize: 44, fontWeight: "800", color: "#ffffff", lineHeight: 1.05 }),
+      makeLayer("shape", { name: "KPI Card", x: 28, y: 330, width: 200, height: 90, fill: "#ffffff12", borderRadius: 14, borderWidth: 1, borderColor: "#ffffff25" }),
+      makeLayer("text", { name: "KPI Label", text: "VDP VIEWS", x: 44, y: 342, width: 160, height: 20, fontSize: 10, fontWeight: "700", color: "#94a3b8", letterSpacing: 2, textTransform: "uppercase" }),
+      makeLayer("text", { name: "KPI Value", text: "+47%", x: 44, y: 365, width: 160, height: 50, fontSize: 42, fontWeight: "800", color: "#60a5fa" }),
+      makeLayer("shape", { name: "CTA Button", x: 28, y: 445, width: 364, height: 48, fill: "#3b82f6", borderRadius: 12 }),
+      makeLayer("text", { name: "CTA Text", text: "View Full Analysis →", x: 28, y: 455, width: 364, height: 30, fontSize: 15, fontWeight: "700", color: "#ffffff", textAlign: "center" }),
+    ],
+  },
+  {
+    id: "magazine-bw",
+    name: "Magazine Cut",
+    desc: "B&W photo, editorial split layout",
+    thumbType: "bwArch",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "solid", bgColor: "#f8fafc" }),
+      makeLayer("image", { name: "Photo", src: img, x: 0, y: 0, width: 250, height: 520, objectFit: "cover", filter: "grayscale(100%)" }),
+      makeLayer("shape", { name: "Right Panel", x: 220, y: 0, width: 200, height: 520, fill: "#0f172a" }),
+      makeLayer("text", { name: "Badge", text: "ATLAS AI", x: 240, y: 40, width: 160, height: 20, fontSize: 10, fontWeight: "800", color: "#64748b", letterSpacing: 4, textTransform: "uppercase" }),
+      makeLayer("text", { name: "Headline", text: "Lead\nConversion\nUp This\nWeek", x: 240, y: 80, width: 160, height: 200, fontSize: 30, fontWeight: "800", color: "#ffffff", lineHeight: 1.1, fontStyle: "italic" }),
+      makeLayer("shape", { name: "Accent Line", x: 240, y: 290, width: 40, height: 3, fill: "#ef4444" }),
+      makeLayer("text", { name: "KPI", text: "12.3%", x: 240, y: 310, width: 160, height: 60, fontSize: 52, fontWeight: "900", color: "#ef4444" }),
+      makeLayer("text", { name: "KPI Label", text: "conversion rate", x: 240, y: 370, width: 160, height: 20, fontSize: 12, fontWeight: "500", color: "#94a3b8" }),
+      makeLayer("text", { name: "CTA", text: "Read Analysis →", x: 240, y: 460, width: 160, height: 24, fontSize: 13, fontWeight: "700", color: "#3b82f6" }),
+    ],
+  },
+  {
+    id: "neon-data",
+    name: "Neon Data",
+    desc: "Dark mode, neon accents, cosmic",
+    thumbType: "abstract1",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img, bgOverlay: "linear-gradient(160deg, rgba(10,10,26,0.7), rgba(26,10,46,0.5))", bgOverlayOpacity: 1 }),
+      makeLayer("shape", { name: "Glow Circle", x: 260, y: -40, width: 250, height: 250, shapeType: "circle", fill: "#8b5cf620", borderWidth: 1, borderColor: "#8b5cf630" }),
+      makeLayer("text", { name: "Badge", text: "⚡ ANOMALY DETECTED", x: 28, y: 36, width: 250, height: 22, fontSize: 11, fontWeight: "700", color: "#c084fc", letterSpacing: 2, textTransform: "uppercase" }),
+      makeLayer("shape", { name: "Top Line", x: 28, y: 65, width: 60, height: 2, fill: "#8b5cf6" }),
+      makeLayer("text", { name: "Headline", text: "SRP Bounce\nRate Anomaly", x: 28, y: 85, width: 360, height: 120, fontSize: 40, fontWeight: "800", color: "#ffffff", lineHeight: 1.1 }),
+      makeLayer("text", { name: "Sub", text: "Search Results Page performance flagged", x: 28, y: 215, width: 300, height: 30, fontSize: 13, fontWeight: "400", color: "#94a3b8", lineHeight: 1.5 }),
+      makeLayer("shape", { name: "KPI Block", x: 28, y: 270, width: 364, height: 100, fill: "#8b5cf610", borderRadius: 16, borderWidth: 1, borderColor: "#8b5cf625" }),
+      makeLayer("text", { name: "KPI Label", text: "BOUNCE RATE", x: 48, y: 286, width: 140, height: 18, fontSize: 10, fontWeight: "700", color: "#a78bfa", letterSpacing: 2, textTransform: "uppercase" }),
+      makeLayer("text", { name: "KPI Value", text: "68%", x: 48, y: 308, width: 180, height: 55, fontSize: 56, fontWeight: "900", color: "#c084fc" }),
+      makeLayer("text", { name: "KPI Delta", text: "↑ +26pp vs avg", x: 200, y: 330, width: 160, height: 24, fontSize: 14, fontWeight: "600", color: "#f87171" }),
+      makeLayer("shape", { name: "CTA", x: 28, y: 420, width: 364, height: 48, fill: "#8b5cf6", borderRadius: 12 }),
+      makeLayer("text", { name: "CTA Text", text: "Investigate Now →", x: 28, y: 430, width: 364, height: 30, fontSize: 15, fontWeight: "700", color: "#ffffff", textAlign: "center" }),
+    ],
+  },
+  {
+    id: "clean-minimal",
+    name: "Clean Minimal",
+    desc: "White space, featured image, clean type",
+    thumbType: "geometric",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "solid", bgColor: "#ffffff" }),
+      makeLayer("shape", { name: "Color Bar", x: 0, y: 0, width: CANVAS_W, height: 6, fill: "#2563eb" }),
+      makeLayer("text", { name: "Badge", text: "ATLAS INSIGHT", x: 32, y: 28, width: 200, height: 20, fontSize: 10, fontWeight: "700", color: "#2563eb", letterSpacing: 3, textTransform: "uppercase" }),
+      makeLayer("text", { name: "Headline", text: "Avg. Time on\nVDP Declining", x: 32, y: 60, width: 340, height: 90, fontSize: 34, fontWeight: "800", color: "#0f172a", lineHeight: 1.15 }),
+      makeLayer("text", { name: "Subhead", text: "Image load times may be impacting engagement", x: 32, y: 158, width: 280, height: 36, fontSize: 14, fontWeight: "400", color: "#64748b", lineHeight: 1.5 }),
+      makeLayer("image", { name: "Feature Image", src: img, x: 32, y: 210, width: 356, height: 160, borderRadius: 12 }),
+      makeLayer("shape", { name: "KPI Card", x: 32, y: 390, width: 160, height: 72, fill: "#f1f5f9", borderRadius: 12 }),
+      makeLayer("text", { name: "KPI Label", text: "AVG TIME", x: 46, y: 400, width: 130, height: 16, fontSize: 10, fontWeight: "700", color: "#64748b", letterSpacing: 2 }),
+      makeLayer("text", { name: "KPI Value", text: "-18s", x: 46, y: 420, width: 130, height: 40, fontSize: 36, fontWeight: "800", color: "#ef4444" }),
+      makeLayer("shape", { name: "CTA", x: 210, y: 390, width: 178, height: 72, fill: "#0f172a", borderRadius: 12 }),
+      makeLayer("text", { name: "CTA Text", text: "See Details →", x: 210, y: 414, width: 178, height: 24, fontSize: 14, fontWeight: "700", color: "#ffffff", textAlign: "center" }),
+    ],
+  },
+  {
+    id: "gradient-bold",
+    name: "Bold Impact",
+    desc: "Vibrant purple, oversized KPI",
+    thumbType: "gradient1",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      makeLayer("shape", { name: "Blob 1", x: 280, y: -60, width: 250, height: 250, shapeType: "circle", fill: "#ffffff10" }),
+      makeLayer("shape", { name: "Blob 2", x: -80, y: 350, width: 250, height: 250, shapeType: "circle", fill: "#ffffff08" }),
+      makeLayer("text", { name: "KPI Value", text: "+47%", x: 24, y: 50, width: 380, height: 140, fontSize: 110, fontWeight: "900", color: "#ffffff", textAlign: "center", letterSpacing: -3 }),
+      makeLayer("shape", { name: "Divider", x: 160, y: 200, width: 100, height: 3, fill: "#ffffff60" }),
+      makeLayer("text", { name: "Headline", text: "VDP Views Surge", x: 24, y: 220, width: 380, height: 80, fontSize: 32, fontWeight: "700", color: "#ffffffdd", textAlign: "center", lineHeight: 1.2 }),
+      makeLayer("text", { name: "Detail", text: "Vehicle Detail Page views jumped well above\nthe 30-day average on Feb 23", x: 40, y: 310, width: 340, height: 50, fontSize: 14, fontWeight: "400", color: "#ffffffaa", textAlign: "center", lineHeight: 1.5 }),
+      makeLayer("shape", { name: "CTA", x: 80, y: 410, width: 260, height: 52, fill: "#ffffff", borderRadius: 26 }),
+      makeLayer("text", { name: "CTA Text", text: "View Full Analysis →", x: 80, y: 422, width: 260, height: 30, fontSize: 15, fontWeight: "700", color: "#4c1d95", textAlign: "center" }),
+      makeLayer("text", { name: "Footer", text: "ATLAS · AI-POWERED INSIGHTS", x: 80, y: 476, width: 260, height: 18, fontSize: 9, fontWeight: "600", color: "#ffffff50", textAlign: "center", letterSpacing: 3 }),
+    ],
+  },
+  {
+    id: "auto-luxury",
+    name: "Luxury Auto",
+    desc: "Dark automotive, premium gold accents",
+    thumbType: "car",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img, bgOverlay: "linear-gradient(to right, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.3) 100%)", bgOverlayOpacity: 1 }),
+      makeLayer("shape", { name: "Left Accent", x: 0, y: 0, width: 4, height: 520, fill: "#d97706" }),
+      makeLayer("text", { name: "Brand", text: "ATLAS", x: 28, y: 30, width: 100, height: 22, fontSize: 12, fontWeight: "800", color: "#d97706", letterSpacing: 6 }),
+      makeLayer("text", { name: "Headline", text: "Lead Gen\nPerformance\nInsight", x: 28, y: 120, width: 240, height: 140, fontSize: 36, fontWeight: "700", color: "#ffffff", lineHeight: 1.15 }),
+      makeLayer("shape", { name: "Gold Line", x: 28, y: 275, width: 50, height: 2, fill: "#d97706" }),
+      makeLayer("text", { name: "KPI Value", text: "12.3%", x: 28, y: 300, width: 200, height: 60, fontSize: 54, fontWeight: "900", color: "#fbbf24" }),
+      makeLayer("text", { name: "KPI Label", text: "conversion rate · ↑ 3.1pp WoW", x: 28, y: 365, width: 260, height: 20, fontSize: 12, fontWeight: "500", color: "#a3a3a3" }),
+      makeLayer("text", { name: "CTA", text: "View Analysis →", x: 28, y: 460, width: 160, height: 22, fontSize: 14, fontWeight: "700", color: "#d97706" }),
+    ],
+  },
+  // ─── EDGY / NON-CORPORATE TEMPLATES ───
+  {
+    id: "oversized-type",
+    name: "Oversized Type",
+    desc: "Giant number bleeds off canvas, magazine cover",
+    thumbType: "darkMetal",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // Massive oversized number — bleeding off edges like a magazine cover
+      makeLayer("text", { name: "Big Number", text: "47", x: -30, y: -60, width: 500, height: 380, fontSize: 320, fontWeight: "900", color: "#ffffff08", lineHeight: 0.85, letterSpacing: -15 }),
+      // Small detail label top
+      makeLayer("text", { name: "Issue Tag", text: "ATLAS ISSUE 024 — FEB 2026", x: 20, y: 18, width: 380, height: 16, fontSize: 9, fontWeight: "600", color: "#ffffff50", letterSpacing: 4, textTransform: "uppercase" }),
+      // Thin rule
+      makeLayer("shape", { name: "Top Rule", x: 20, y: 40, width: 380, height: 1, fill: "#ffffff20" }),
+      // Main headline — stacked, tight
+      makeLayer("text", { name: "Headline L1", text: "VDP", x: 20, y: 200, width: 380, height: 70, fontSize: 72, fontWeight: "900", color: "#ffffff", lineHeight: 0.9, letterSpacing: -2 }),
+      makeLayer("text", { name: "Headline L2", text: "VIEWS", x: 20, y: 265, width: 380, height: 70, fontSize: 72, fontWeight: "900", color: "#ffffff", lineHeight: 0.9, letterSpacing: -2 }),
+      makeLayer("text", { name: "Headline L3", text: "SURGE", x: 20, y: 330, width: 380, height: 70, fontSize: 72, fontWeight: "900", color: "#ef4444", lineHeight: 0.9, letterSpacing: -2 }),
+      // Accent KPI inline
+      makeLayer("text", { name: "KPI Inline", text: "+47% above 30-day avg", x: 20, y: 405, width: 300, height: 22, fontSize: 14, fontWeight: "500", color: "#ffffff80" }),
+      // Bottom rule
+      makeLayer("shape", { name: "Bottom Rule", x: 20, y: 440, width: 380, height: 1, fill: "#ffffff20" }),
+      // CTA small, editorial
+      makeLayer("text", { name: "CTA", text: "READ THE FULL ANALYSIS →", x: 20, y: 455, width: 380, height: 20, fontSize: 10, fontWeight: "700", color: "#ef4444", letterSpacing: 3, textTransform: "uppercase" }),
+      // Footer
+      makeLayer("text", { name: "Footer", text: "ATLAS · DATA INTELLIGENCE", x: 20, y: 490, width: 380, height: 14, fontSize: 8, fontWeight: "600", color: "#ffffff25", letterSpacing: 4, textTransform: "uppercase" }),
+    ],
+  },
+  {
+    id: "zine-cutout",
+    name: "Zine Cutout",
+    desc: "Xerox aesthetic, torn paper, raw",
+    thumbType: "grittyBW",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // "Tape" strip across top
+      makeLayer("shape", { name: "Tape Strip", x: 100, y: 25, width: 220, height: 22, fill: "#f5e6a0", opacity: 0.4, borderRadius: 0 }),
+      // Handwritten-feel label
+      makeLayer("text", { name: "Scrawl Label", text: "!! ANOMALY !!", x: 105, y: 26, width: 210, height: 20, fontSize: 14, fontWeight: "900", color: "#1a1a1a", textAlign: "center", fontStyle: "italic" }),
+      // Black block for headline
+      makeLayer("shape", { name: "Black Block", x: 15, y: 120, width: 390, height: 180, fill: "#0a0a0a", borderRadius: 0 }),
+      // Headline — broken/stacked like a punk poster
+      makeLayer("text", { name: "Head 1", text: "BOUNCE", x: 25, y: 125, width: 370, height: 55, fontSize: 54, fontWeight: "900", color: "#ffffff", letterSpacing: -1 }),
+      makeLayer("text", { name: "Head 2", text: "RATE", x: 25, y: 175, width: 200, height: 55, fontSize: 54, fontWeight: "900", color: "#ff2d55", letterSpacing: -1 }),
+      makeLayer("text", { name: "Head 3", text: "68%", x: 195, y: 175, width: 190, height: 55, fontSize: 54, fontWeight: "900", color: "#ffffff", letterSpacing: -1 }),
+      makeLayer("text", { name: "Subline", text: "vs 42% average — something is very wrong", x: 25, y: 232, width: 370, height: 20, fontSize: 11, fontWeight: "500", color: "#ffffff70", fontStyle: "italic" }),
+      // Rotated accent strip
+      makeLayer("shape", { name: "Red Stripe", x: -10, y: 340, width: 440, height: 4, fill: "#ff2d55" }),
+      // Detail text — messy, real
+      makeLayer("text", { name: "Detail", text: "SRP bounce spiked after pricing update.\nCheck competitive positioning ASAP.", x: 20, y: 360, width: 380, height: 50, fontSize: 13, fontWeight: "400", color: "#1a1a1a", lineHeight: 1.6 }),
+      // CTA — underlined, raw
+      makeLayer("shape", { name: "CTA Underline", x: 20, y: 450, width: 160, height: 2, fill: "#1a1a1a" }),
+      makeLayer("text", { name: "CTA", text: "investigate now", x: 20, y: 430, width: 200, height: 22, fontSize: 16, fontWeight: "700", color: "#1a1a1a", fontStyle: "italic" }),
+      // Stamp-like circle
+      makeLayer("shape", { name: "Stamp", x: 310, y: 400, width: 80, height: 80, shapeType: "circle", fill: "transparent", borderWidth: 3, borderColor: "#ff2d5560" }),
+      makeLayer("text", { name: "Stamp Text", text: "URGENT", x: 318, y: 430, width: 65, height: 20, fontSize: 10, fontWeight: "900", color: "#ff2d5580", textAlign: "center", letterSpacing: 2 }),
+    ],
+  },
+  {
+    id: "neon-retro",
+    name: "Neon Retro",
+    desc: "Synthwave grid, hot pink, 80s vibes",
+    thumbType: "neonGrid",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // Chrome-style text outline effect via layered text
+      makeLayer("text", { name: "Small Top", text: "ATLAS DATA SIGNAL", x: 20, y: 25, width: 380, height: 18, fontSize: 10, fontWeight: "600", color: "#ff006640", letterSpacing: 6, textTransform: "uppercase", textAlign: "center" }),
+      // Big stacked display
+      makeLayer("text", { name: "Line 1", text: "COMING", x: 10, y: 80, width: 400, height: 80, fontSize: 78, fontWeight: "900", color: "#ff0066", textAlign: "center", letterSpacing: 8, lineHeight: 0.95 }),
+      makeLayer("text", { name: "Line 2", text: "IN HOT", x: 10, y: 155, width: 400, height: 80, fontSize: 78, fontWeight: "900", color: "#ffffff", textAlign: "center", letterSpacing: 8, lineHeight: 0.95 }),
+      // Thin neon line
+      makeLayer("shape", { name: "Neon Line", x: 60, y: 245, width: 300, height: 2, fill: "#ff0066" }),
+      // KPI block — big and glowy
+      makeLayer("text", { name: "KPI", text: "+47%", x: 20, y: 265, width: 380, height: 100, fontSize: 96, fontWeight: "900", color: "#00ffaa", textAlign: "center", letterSpacing: -2 }),
+      makeLayer("text", { name: "KPI Label", text: "VDP VIEWS · 30-DAY ANOMALY", x: 20, y: 365, width: 380, height: 18, fontSize: 10, fontWeight: "600", color: "#ff006680", textAlign: "center", letterSpacing: 4 }),
+      // Bottom CTA bar
+      makeLayer("shape", { name: "CTA Bar", x: 60, y: 420, width: 300, height: 44, fill: "#ff0066", borderRadius: 0 }),
+      makeLayer("text", { name: "CTA Text", text: "VIEW ANALYSIS", x: 60, y: 430, width: 300, height: 24, fontSize: 14, fontWeight: "800", color: "#ffffff", textAlign: "center", letterSpacing: 4 }),
+      // Small footer
+      makeLayer("text", { name: "Footer", text: "A T L A S", x: 20, y: 485, width: 380, height: 16, fontSize: 10, fontWeight: "300", color: "#ffffff20", textAlign: "center", letterSpacing: 12 }),
+    ],
+  },
+  {
+    id: "halftone-pop",
+    name: "Halftone Pop",
+    desc: "Pop art dots, bold red, in-your-face",
+    thumbType: "halftone",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // Big white starburst-style shape
+      makeLayer("shape", { name: "Circle Burst", x: 60, y: 30, width: 300, height: 300, shapeType: "circle", fill: "#ffffff", opacity: 0.95 }),
+      // Stacked bold text inside circle
+      makeLayer("text", { name: "Exclaim", text: "WOW!", x: 100, y: 60, width: 220, height: 60, fontSize: 52, fontWeight: "900", color: "#ff2d55", textAlign: "center", fontStyle: "italic" }),
+      makeLayer("text", { name: "KPI Big", text: "-18s", x: 90, y: 120, width: 240, height: 90, fontSize: 88, fontWeight: "900", color: "#1a1a1a", textAlign: "center", letterSpacing: -3 }),
+      makeLayer("text", { name: "KPI Sub", text: "avg time on VDP", x: 100, y: 210, width: 220, height: 20, fontSize: 12, fontWeight: "700", color: "#1a1a1a80", textAlign: "center", textTransform: "uppercase", letterSpacing: 2 }),
+      // Banner strip
+      makeLayer("shape", { name: "Banner", x: 0, y: 350, width: 420, height: 60, fill: "#1a1a1a" }),
+      makeLayer("text", { name: "Banner Text", text: "PAGE SPEED IS KILLING\nYOUR ENGAGEMENT", x: 15, y: 354, width: 390, height: 52, fontSize: 18, fontWeight: "900", color: "#ffffff", textAlign: "center", lineHeight: 1.3 }),
+      // Bottom CTA
+      makeLayer("shape", { name: "CTA Pill", x: 100, y: 430, width: 220, height: 44, fill: "#ffffff", borderRadius: 22, borderWidth: 3, borderColor: "#1a1a1a" }),
+      makeLayer("text", { name: "CTA", text: "GET THE DATA →", x: 100, y: 440, width: 220, height: 24, fontSize: 13, fontWeight: "800", color: "#1a1a1a", textAlign: "center", letterSpacing: 2 }),
+      // Small atlas branding
+      makeLayer("text", { name: "Atlas", text: "ATLAS AI INSIGHT", x: 20, y: 492, width: 380, height: 14, fontSize: 8, fontWeight: "700", color: "#ffffff60", textAlign: "center", letterSpacing: 4 }),
+    ],
+  },
+  {
+    id: "brutalist-raw",
+    name: "Brutalist Raw",
+    desc: "Concrete, hard geometry, no polish",
+    thumbType: "brutalist",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // Hard black block — top
+      makeLayer("shape", { name: "Top Block", x: 0, y: 0, width: 420, height: 200, fill: "#0a0a0a" }),
+      // Rotated accent bar
+      makeLayer("shape", { name: "Yellow Bar", x: -10, y: 195, width: 440, height: 8, fill: "#facc15" }),
+      // Headline in top block — raw, condensed
+      makeLayer("text", { name: "Pre", text: "DATA SAYS:", x: 20, y: 20, width: 380, height: 18, fontSize: 10, fontWeight: "700", color: "#facc1580", letterSpacing: 5, textTransform: "uppercase" }),
+      makeLayer("text", { name: "Head 1", text: "LEADS ARE", x: 15, y: 48, width: 390, height: 65, fontSize: 62, fontWeight: "900", color: "#ffffff", letterSpacing: -3, lineHeight: 0.95 }),
+      makeLayer("text", { name: "Head 2", text: "CONVERTING", x: 15, y: 110, width: 390, height: 65, fontSize: 62, fontWeight: "900", color: "#facc15", letterSpacing: -3, lineHeight: 0.95 }),
+      // KPI in the concrete area — stark
+      makeLayer("text", { name: "KPI", text: "12.3%", x: 20, y: 230, width: 300, height: 80, fontSize: 80, fontWeight: "900", color: "#0a0a0a", letterSpacing: -2 }),
+      makeLayer("text", { name: "KPI Context", text: "↑ 3.1 percentage points week-over-week\nNew chat widget is the primary driver", x: 20, y: 320, width: 300, height: 50, fontSize: 12, fontWeight: "400", color: "#0a0a0a99", lineHeight: 1.6 }),
+      // Bottom black bar with CTA
+      makeLayer("shape", { name: "Bottom Bar", x: 0, y: 420, width: 420, height: 100, fill: "#0a0a0a" }),
+      makeLayer("shape", { name: "Yellow CTA", x: 20, y: 440, width: 200, height: 40, fill: "#facc15", borderRadius: 0 }),
+      makeLayer("text", { name: "CTA Text", text: "READ MORE", x: 20, y: 448, width: 200, height: 24, fontSize: 14, fontWeight: "900", color: "#0a0a0a", textAlign: "center", letterSpacing: 3 }),
+      makeLayer("text", { name: "Footer", text: "ATLAS — 024", x: 280, y: 455, width: 120, height: 14, fontSize: 10, fontWeight: "600", color: "#ffffff30", letterSpacing: 4 }),
+    ],
+  },
+
+  // ─── T-SHIRT TEMPLATES ───
+  {
+    id: "tshirt-black-stacked",
+    name: "Black Tee — Stacked",
+    desc: "Broken word stack, garment graphic style",
+    thumbType: "fabricBlack",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // Giant stacked broken word — like the Silhouette tee reference
+      // Each syllable is its own layer so they can be moved independently
+      makeLayer("text", { name: "Word — VDP", x: 55, y: 90, width: 200, height: 80, fontSize: 90, fontWeight: "900", color: "#ffffff", lineHeight: 0.85, letterSpacing: -4 }),
+      makeLayer("text", { name: "Word — VIE", x: 55, y: 165, width: 200, height: 80, fontSize: 90, fontWeight: "900", color: "#ffffff", lineHeight: 0.85, letterSpacing: -4 }),
+      makeLayer("text", { name: "Word — WS↑", x: 55, y: 240, width: 200, height: 80, fontSize: 90, fontWeight: "900", color: "#ef4444", lineHeight: 0.85, letterSpacing: -4 }),
+      // Small definition block to the right — like the tee reference
+      makeLayer("text", { name: "Sub Label", text: "SURGE DETECTED", x: 250, y: 240, width: 150, height: 16, fontSize: 10, fontWeight: "700", color: "#ffffff99", letterSpacing: 2, textTransform: "uppercase" }),
+      makeLayer("text", { name: "Sub Body", text: "Vehicle Detail Page views exceeded 30-day baseline by 47%. Atlas AI flagged at 09:14.", x: 250, y: 260, width: 150, height: 70, fontSize: 11, fontWeight: "400", color: "#ffffff60", lineHeight: 1.5 }),
+      // Thin rule
+      makeLayer("shape", { name: "Rule", x: 55, y: 340, width: 345, height: 1, fill: "#ffffff15" }),
+      // CTA — small, lower left like a garment label
+      makeLayer("text", { name: "CTA", text: "atlas.app/insight →", x: 55, y: 358, width: 200, height: 18, fontSize: 12, fontWeight: "500", color: "#ffffff40", fontStyle: "italic" }),
+      // Tiny atlas logo mark in corner
+      makeLayer("text", { name: "Mark", text: "A", x: 362, y: 350, width: 38, height: 38, fontSize: 32, fontWeight: "900", color: "#ffffff10", textAlign: "center" }),
+    ],
+  },
+  {
+    id: "tshirt-white-back",
+    name: "White Tee — Back Print",
+    desc: "Clean garment back print, all-caps block",
+    thumbType: "fabricWhite",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // Central block print — like back of a uniform or jersey
+      makeLayer("text", { name: "Big Number", text: "47", x: 50, y: 60, width: 160, height: 140, fontSize: 160, fontWeight: "900", color: "#1a1a1a", lineHeight: 0.85, letterSpacing: -8 }),
+      makeLayer("text", { name: "Percent", text: "%", x: 200, y: 68, width: 100, height: 80, fontSize: 72, fontWeight: "900", color: "#1a1a1a", lineHeight: 0.85 }),
+      makeLayer("shape", { name: "Divider", x: 50, y: 210, width: 320, height: 3, fill: "#1a1a1a" }),
+      makeLayer("text", { name: "Team Name", text: "VDP VIEWS", x: 50, y: 222, width: 320, height: 36, fontSize: 32, fontWeight: "900", color: "#1a1a1a", letterSpacing: 6, textTransform: "uppercase" }),
+      makeLayer("shape", { name: "Divider 2", x: 50, y: 264, width: 320, height: 3, fill: "#1a1a1a" }),
+      makeLayer("text", { name: "Season", text: "ATLAS · FEB 2026 · ANOMALY REPORT", x: 50, y: 278, width: 320, height: 18, fontSize: 10, fontWeight: "700", color: "#1a1a1a80", letterSpacing: 3 }),
+      // KPI badge — circular like a jersey number badge
+      makeLayer("shape", { name: "Badge Circle", x: 50, y: 340, width: 80, height: 80, shapeType: "circle", fill: "#1a1a1a" }),
+      makeLayer("text", { name: "Badge KPI", text: "+47%", x: 132, y: 350, width: 238, height: 28, fontSize: 22, fontWeight: "800", color: "#1a1a1a" }),
+      makeLayer("text", { name: "Badge Sub", text: "above 30-day average", x: 132, y: 378, width: 238, height: 18, fontSize: 12, fontWeight: "400", color: "#1a1a1a80" }),
+      // CTA
+      makeLayer("text", { name: "CTA", text: "VIEW FULL ANALYSIS →", x: 50, y: 456, width: 320, height: 18, fontSize: 11, fontWeight: "700", color: "#1a1a1a60", letterSpacing: 3, textAlign: "center" }),
+    ],
+  },
+
+  // ─── AUTOMOTIVE TEMPLATES ───
+  {
+    id: "car-showroom",
+    name: "Showroom Drop",
+    desc: "Rendered car silhouette, dramatic spot lighting",
+    thumbType: "carShowroom",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // Top-left model badge
+      makeLayer("text", { name: "Model Badge", text: "ATLAS · AI", x: 24, y: 22, width: 120, height: 16, fontSize: 10, fontWeight: "800", color: "#ffffff30", letterSpacing: 6 }),
+      // Large KPI that sits above the car in visual space
+      makeLayer("text", { name: "KPI Value", text: "12.3%", x: 20, y: 50, width: 300, height: 100, fontSize: 96, fontWeight: "900", color: "#ffffff", letterSpacing: -4, lineHeight: 0.9 }),
+      makeLayer("text", { name: "KPI Label", text: "LEAD CONVERSION", x: 22, y: 152, width: 250, height: 18, fontSize: 11, fontWeight: "700", color: "#d97706", letterSpacing: 4, textTransform: "uppercase" }),
+      makeLayer("shape", { name: "Gold Bar", x: 22, y: 176, width: 50, height: 3, fill: "#d97706" }),
+      // Secondary text — sits in lower left below car
+      makeLayer("text", { name: "Context", text: "↑ 3.1pp week-over-week\nNew chat widget driving uplift", x: 22, y: 420, width: 260, height: 50, fontSize: 13, fontWeight: "400", color: "#ffffff80", lineHeight: 1.6 }),
+      // Right-aligned CTA
+      makeLayer("shape", { name: "CTA Box", x: 280, y: 430, width: 118, height: 40, fill: "#d97706", borderRadius: 4 }),
+      makeLayer("text", { name: "CTA Text", text: "DETAILS →", x: 280, y: 440, width: 118, height: 20, fontSize: 12, fontWeight: "800", color: "#000000", textAlign: "center", letterSpacing: 2 }),
+    ],
+  },
+  {
+    id: "car-racetrack",
+    name: "Track Data",
+    desc: "Racetrack overhead, speed lines, performance feel",
+    thumbType: "racetrack",
+    layers: (img) => [
+      makeLayer("bg", { bgType: "image", bgImage: img }),
+      // Top bar
+      makeLayer("shape", { name: "Top Bar", x: 0, y: 0, width: 420, height: 56, fill: "#000000dd" }),
+      makeLayer("text", { name: "Label", text: "ATLAS PERFORMANCE REPORT", x: 20, y: 18, width: 280, height: 18, fontSize: 10, fontWeight: "700", color: "#ffffff60", letterSpacing: 4 }),
+      makeLayer("text", { name: "Date", text: "FEB 2026", x: 330, y: 18, width: 80, height: 18, fontSize: 10, fontWeight: "600", color: "#ff4400", letterSpacing: 2 }),
+      // Big stat in center with racing unit feel
+      makeLayer("text", { name: "KPI Hero", text: "+47%", x: 20, y: 140, width: 380, height: 120, fontSize: 110, fontWeight: "900", color: "#ffffff", textAlign: "center", letterSpacing: -5, lineHeight: 0.9 }),
+      makeLayer("text", { name: "KPI Unit", text: "VDP VIEWS · SURGE DETECTED", x: 20, y: 258, width: 380, height: 18, fontSize: 11, fontWeight: "700", color: "#ff4400", textAlign: "center", letterSpacing: 4 }),
+      // Stat row
+      makeLayer("shape", { name: "Stat Bar", x: 0, y: 310, width: 420, height: 80, fill: "#000000cc" }),
+      makeLayer("text", { name: "Stat 1 V", text: "09:14", x: 30, y: 322, width: 90, height: 30, fontSize: 26, fontWeight: "800", color: "#ffffff" }),
+      makeLayer("text", { name: "Stat 1 L", text: "FLAGGED", x: 30, y: 354, width: 90, height: 16, fontSize: 9, fontWeight: "600", color: "#ffffff50", letterSpacing: 2 }),
+      makeLayer("text", { name: "Stat 2 V", text: "47%", x: 165, y: 322, width: 90, height: 30, fontSize: 26, fontWeight: "800", color: "#ff4400" }),
+      makeLayer("text", { name: "Stat 2 L", text: "ABOVE AVG", x: 155, y: 354, width: 110, height: 16, fontSize: 9, fontWeight: "600", color: "#ffffff50", letterSpacing: 2 }),
+      makeLayer("text", { name: "Stat 3 V", text: "30D", x: 300, y: 322, width: 90, height: 30, fontSize: 26, fontWeight: "800", color: "#ffffff" }),
+      makeLayer("text", { name: "Stat 3 L", text: "BASELINE", x: 300, y: 354, width: 90, height: 16, fontSize: 9, fontWeight: "600", color: "#ffffff50", letterSpacing: 2 }),
+      // Bottom CTA strip
+      makeLayer("shape", { name: "CTA Strip", x: 0, y: 460, width: 420, height: 60, fill: "#ff4400" }),
+      makeLayer("text", { name: "CTA", text: "VIEW FULL ANALYSIS →", x: 0, y: 478, width: 420, height: 24, fontSize: 14, fontWeight: "800", color: "#ffffff", textAlign: "center", letterSpacing: 4 }),
+    ],
+  },
+];
+
+// ═══════ Main Component ═══════
+function AtlasPostCreator() {
+  const [view, setView] = useState("gallery");
+  const [layers, setLayers] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [dragState, setDragState] = useState(null);
+  const [resizeState, setResizeState] = useState(null);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+  const [imagePickerTarget, setImagePickerTarget] = useState(null);
+  const [photoCat, setPhotoCat] = useState("all");
+  const [editingTextId, setEditingTextId] = useState(null);
+  const [published, setPublished] = useState(false);
+  const canvasRef = useRef(null);
+
+  // Generate images lazily and cache them
+  const imageCache = useRef({});
+  const getImage = useCallback((type) => {
+    if (!imageCache.current[type]) {
+      imageCache.current[type] = generateImage(type);
+    }
+    return imageCache.current[type];
+  }, []);
+
+  // Generate thumbnail images for gallery
+  const thumbCache = useRef({});
+  const getThumb = useCallback((type) => {
+    if (!thumbCache.current[type]) {
+      thumbCache.current[type] = generateImage(type, 300, 370);
+    }
+    return thumbCache.current[type];
+  }, []);
+
+  // Pre-generate small thumbs for photo picker
+  const pickerThumbCache = useRef({});
+  const getPickerThumb = useCallback((type) => {
+    if (!pickerThumbCache.current[type]) {
+      pickerThumbCache.current[type] = generateImage(type, 200, 150);
+    }
+    return pickerThumbCache.current[type];
+  }, []);
+
+  const selectedLayer = layers.find(l => l.id === selectedId);
+
+  const updateLayer = useCallback((id, updates) => {
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
+  }, []);
+
+  const deleteLayer = useCallback((id) => {
+    setLayers(prev => prev.filter(l => !(l.id === id && l.type !== "bg")));
+    if (selectedId === id) setSelectedId(null);
+  }, [selectedId]);
+
+  const duplicateLayer = useCallback((id) => {
+    setLayers(prev => {
+      const src = prev.find(l => l.id === id);
+      if (!src || src.type === "bg") return prev;
+      const copy = { ...src, id: uid(), name: src.name + " Copy", x: src.x + 15, y: src.y + 15 };
+      const idx = prev.indexOf(src);
+      const next = [...prev];
+      next.splice(idx + 1, 0, copy);
+      return next;
+    });
+  }, []);
+
+  const moveLayerOrder = useCallback((id, dir) => {
+    setLayers(prev => {
+      const idx = prev.findIndex(l => l.id === id);
+      if (idx < 0) return prev;
+      const target = dir === "up" ? idx + 1 : idx - 1;
+      if (target < 1 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }, []);
+
+  const addLayer = useCallback((type) => {
+    const layer = makeLayer(type, {
+      x: 30 + Math.random() * 40, y: 100 + Math.random() * 40,
+      width: type === "shape" ? 150 : 200,
+      height: type === "shape" ? 150 : (type === "text" ? 50 : 150),
+    });
+    setLayers(prev => [...prev, layer]);
+    setSelectedId(layer.id);
+  }, []);
+
+  // ─── Drag/Resize ───
+  const handleCanvasMouseDown = (e, layerId) => {
+    e.stopPropagation();
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer || layer.locked) { setSelectedId(layerId); return; }
+    setSelectedId(layerId);
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scale = CANVAS_W / rect.width;
+    setDragState({ id: layerId, startX: e.clientX, startY: e.clientY, origX: layer.x, origY: layer.y, scale });
+  };
+
+  const handleResizeMouseDown = (e, layerId, handle) => {
+    e.stopPropagation(); e.preventDefault();
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer || layer.locked) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scale = CANVAS_W / rect.width;
+    setResizeState({ id: layerId, handle, startX: e.clientX, startY: e.clientY, origX: layer.x, origY: layer.y, origW: layer.width, origH: layer.height, scale });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (dragState) {
+        const dx = (e.clientX - dragState.startX) * dragState.scale;
+        const dy = (e.clientY - dragState.startY) * dragState.scale;
+        updateLayer(dragState.id, { x: Math.round(dragState.origX + dx), y: Math.round(dragState.origY + dy) });
+      }
+      if (resizeState) {
+        const dx = (e.clientX - resizeState.startX) * resizeState.scale;
+        const dy = (e.clientY - resizeState.startY) * resizeState.scale;
+        const h = resizeState.handle;
+        let { origX, origY, origW, origH } = resizeState;
+        let newX = origX, newY = origY, newW = origW, newH = origH;
+        if (h.includes("e")) newW = Math.max(30, origW + dx);
+        if (h.includes("w")) { newW = Math.max(30, origW - dx); newX = origX + (origW - newW); }
+        if (h.includes("s")) newH = Math.max(20, origH + dy);
+        if (h.includes("n")) { newH = Math.max(20, origH - dy); newY = origY + (origH - newH); }
+        updateLayer(resizeState.id, { x: Math.round(newX), y: Math.round(newY), width: Math.round(newW), height: Math.round(newH) });
+      }
+    };
+    const handleMouseUp = () => { setDragState(null); setResizeState(null); };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
+  }, [dragState, resizeState, updateLayer]);
+
+  const loadTemplate = (tmpl) => {
+    _id = 100;
+    const img = getImage(tmpl.thumbType);
+    const newLayers = tmpl.layers(img);
+    setLayers(newLayers);
+    setSelectedId(null);
+    setView("editor");
+  };
+
+  // ─── Styles ───
+  const S = {
+    page: { height: "100vh", background: "#0a0a0f", color: "#e2e8f0", fontFamily: "'Inter', -apple-system, sans-serif", display: "flex", flexDirection: "column", overflow: "hidden" },
+    header: { borderBottom: "1px solid #1e293b", padding: "10px 16px", display: "flex", alignItems: "center", gap: 10, background: "#0d0f17", flexShrink: 0 },
+    btn: { background: "none", border: "none", color: "#94a3b8", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", borderRadius: 4 },
+    btnActive: { background: "#1e293b", color: "#e2e8f0" },
+    label: { fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "block" },
+    input: { width: "100%", background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "7px 10px", color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box" },
+  };
+
+  // ═══════ GALLERY ═══════
+  if (view === "gallery") {
+    return (
+      <div style={S.page}>
+        <div style={S.header}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: "linear-gradient(135deg, #3b82f6, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13, color: "#fff" }}>A</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Atlas Post Creator</div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>Choose a template to start designing</div>
+          </div>
+        </div>
+        <div style={{ padding: "20px 16px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+            {TEMPLATES.map(tmpl => (
+              <div key={tmpl.id} onClick={() => loadTemplate(tmpl)} style={{ cursor: "pointer" }}>
+                <div style={{ borderRadius: 10, overflow: "hidden", border: "2px solid transparent", transition: "border-color 0.15s", aspectRatio: `${CANVAS_W}/${CANVAS_H}`, position: "relative", background: "#111" }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = "#3b82f6"}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = "transparent"}
+                >
+                  <img src={getThumb(tmpl.thumbType)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "24px 10px 10px", background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#fff" }}>{tmpl.name}</div>
+                    <div style={{ fontSize: 9, color: "#94a3b8" }}>{tmpl.desc}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div onClick={() => { _id = 100; setLayers([makeLayer("bg")]); setSelectedId(null); setView("editor"); }} style={{ cursor: "pointer" }}>
+              <div style={{ borderRadius: 10, border: "2px dashed #334155", aspectRatio: `${CANVAS_W}/${CANVAS_H}`, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, transition: "border-color 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = "#3b82f6"}
+                onMouseLeave={e => e.currentTarget.style.borderColor = "#334155"}
+              >
+                <span style={{ color: "#475569" }}>{Icons.plus}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#64748b" }}>Blank Canvas</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════ PUBLISHED ═══════
+  if (published) {
+    return (
+      <div style={{ ...S.page, alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center", overflow: "auto" }}>
+        {Icons.check}
+        <div style={{ fontSize: 22, fontWeight: 800, marginTop: 16, marginBottom: 8 }}>Published to Atlas Feed</div>
+        <div style={{ fontSize: 13, color: "#64748b", maxWidth: 380, marginBottom: 28 }}>Your post is live. GMs and internet managers will see this in their newsfeed.</div>
+        <button onClick={() => { setPublished(false); setView("gallery"); setLayers([]); setSelectedId(null); }} style={{ background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 10, padding: "10px 28px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>← Create Another Post</button>
+      </div>
+    );
+  }
+
+  // ═══════ EDITOR ═══════
+  const bgLayer = layers.find(l => l.type === "bg");
+  const filteredPhotos = photoCat === "all" ? PHOTO_TYPES : PHOTO_TYPES.filter(p => p.cat === photoCat);
+
+  const renderLayer = (layer, idx) => {
+    if (!layer.visible) return null;
+    const isSelected = layer.id === selectedId;
+    const isEditing = editingTextId === layer.id;
+
+    const wrapStyle = { position: "absolute", left: layer.x, top: layer.y, width: layer.width, height: layer.height, cursor: layer.locked ? "default" : "move", outline: isSelected ? "2px solid #3b82f6" : "none", outlineOffset: 1, zIndex: idx, userSelect: "none" };
+
+    const resizeHandles = isSelected && !layer.locked ? (
+      <>
+        {["nw", "ne", "sw", "se"].map(h => (
+          <div key={h} onMouseDown={e => handleResizeMouseDown(e, layer.id, h)} style={{ position: "absolute", width: 9, height: 9, background: "#3b82f6", border: "2px solid #fff", borderRadius: 2, top: h.includes("n") ? -5 : "auto", bottom: h.includes("s") ? -5 : "auto", left: h.includes("w") ? -5 : "auto", right: h.includes("e") ? -5 : "auto", cursor: `${h}-resize`, zIndex: 999 }} />
+        ))}
+        {["n", "s", "e", "w"].map(h => (
+          <div key={h} onMouseDown={e => handleResizeMouseDown(e, layer.id, h)} style={{ position: "absolute", ...(h === "n" || h === "s" ? { left: "50%", marginLeft: -4, width: 8, height: 5 } : { top: "50%", marginTop: -4, width: 5, height: 8 }), top: h === "n" ? -3 : h === "s" ? "auto" : undefined, bottom: h === "s" ? -3 : undefined, left: h === "w" ? -3 : h === "e" ? "auto" : undefined, right: h === "e" ? -3 : undefined, background: "#3b82f6", borderRadius: 1, cursor: h === "n" || h === "s" ? "ns-resize" : "ew-resize", zIndex: 999 }} />
+        ))}
+      </>
+    ) : null;
+
+    if (layer.type === "bg") {
+      let bgStyle = { position: "absolute", inset: 0, zIndex: 0 };
+      if (layer.bgType === "solid") bgStyle.background = layer.bgColor;
+      else if (layer.bgType === "gradient") bgStyle.background = layer.bgGradient;
+      else if (layer.bgType === "image") {
+        bgStyle.backgroundImage = `url(${layer.bgImage})`;
+        bgStyle.backgroundSize = "cover";
+        bgStyle.backgroundPosition = "center";
+      }
+      if (layer.filter && layer.filter !== "none") bgStyle.filter = layer.filter;
+      return (
+        <div key={layer.id} onClick={() => setSelectedId(layer.id)} style={{ position: "absolute", inset: 0, zIndex: 0, cursor: "pointer" }}>
+          <div style={bgStyle} />
+          {layer.bgOverlay && layer.bgOverlay !== "none" && (
+            <div style={{ position: "absolute", inset: 0, background: layer.bgOverlay, opacity: layer.bgOverlayOpacity, zIndex: 1 }} />
+          )}
+        </div>
+      );
+    }
+    if (layer.type === "text") {
+      return (
+        <div key={layer.id} style={wrapStyle} onMouseDown={e => handleCanvasMouseDown(e, layer.id)} onDoubleClick={() => !layer.locked && setEditingTextId(layer.id)}>
+          {isEditing ? (
+            <textarea autoFocus value={layer.text} onChange={e => updateLayer(layer.id, { text: e.target.value })} onBlur={() => setEditingTextId(null)} onKeyDown={e => { if (e.key === "Escape") setEditingTextId(null); }}
+              style={{ width: "100%", height: "100%", background: "transparent", border: "1px dashed #3b82f680", color: layer.color, fontSize: layer.fontSize, fontWeight: layer.fontWeight, fontFamily: layer.fontFamily, fontStyle: layer.fontStyle, lineHeight: layer.lineHeight, letterSpacing: layer.letterSpacing, textTransform: layer.textTransform, textAlign: layer.textAlign, resize: "none", outline: "none", padding: 0, margin: 0, overflow: "hidden" }}
+            />
+          ) : (
+            <div style={{ width: "100%", height: "100%", color: layer.color, fontSize: layer.fontSize, fontWeight: layer.fontWeight, fontFamily: layer.fontFamily, fontStyle: layer.fontStyle, lineHeight: layer.lineHeight, letterSpacing: layer.letterSpacing, textTransform: layer.textTransform, textAlign: layer.textAlign, overflow: "hidden", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {layer.text}
+            </div>
+          )}
+          {resizeHandles}
+        </div>
+      );
+    }
+    if (layer.type === "image") {
+      return (
+        <div key={layer.id} style={wrapStyle} onMouseDown={e => handleCanvasMouseDown(e, layer.id)}>
+          {layer.src ? (
+            <img src={layer.src} alt="" style={{ width: "100%", height: "100%", objectFit: layer.objectFit, borderRadius: layer.borderRadius, opacity: layer.opacity, filter: layer.filter !== "none" ? layer.filter : undefined, pointerEvents: "none" }} />
+          ) : (
+            <div style={{ width: "100%", height: "100%", background: "#1e293b", border: "2px dashed #334155", borderRadius: layer.borderRadius, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 11 }}>
+              Double-click or use Properties
+            </div>
+          )}
+          {resizeHandles}
+        </div>
+      );
+    }
+    if (layer.type === "shape") {
+      return (
+        <div key={layer.id} style={wrapStyle} onMouseDown={e => handleCanvasMouseDown(e, layer.id)}>
+          <div style={{ width: "100%", height: "100%", background: layer.fill, borderRadius: layer.shapeType === "circle" ? "50%" : layer.borderRadius, opacity: layer.opacity, border: layer.borderWidth ? `${layer.borderWidth}px solid ${layer.borderColor}` : "none", boxSizing: "border-box" }} />
+          {resizeHandles}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // ─── Properties Panel ───
+  const renderProperties = () => {
+    if (!selectedLayer) return <div style={{ padding: 16, color: "#475569", fontSize: 12 }}>Select a layer to edit</div>;
+    const L = selectedLayer;
+
+    if (L.type === "bg") {
+      return (
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <label style={S.label}>Background Type</label>
+            <div style={{ display: "flex", gap: 4 }}>
+              {["solid", "gradient", "image"].map(t => (
+                <button key={t} onClick={() => updateLayer(L.id, { bgType: t })} style={{ ...S.btn, flex: 1, padding: "6px", fontSize: 10, fontWeight: 600, ...(L.bgType === t ? S.btnActive : {}), border: "1px solid #334155", borderRadius: 5, justifyContent: "center" }}>{t}</button>
+              ))}
+            </div>
+          </div>
+          {L.bgType === "solid" && (
+            <div>
+              <label style={S.label}>Color</label>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input type="color" value={L.bgColor} onChange={e => updateLayer(L.id, { bgColor: e.target.value })} style={{ width: 32, height: 32, border: "none", borderRadius: 6, cursor: "pointer", padding: 0 }} />
+                <input value={L.bgColor} onChange={e => updateLayer(L.id, { bgColor: e.target.value })} style={{ ...S.input, flex: 1 }} />
+              </div>
+            </div>
+          )}
+          {L.bgType === "gradient" && (
+            <div><label style={S.label}>CSS Gradient</label><input value={L.bgGradient} onChange={e => updateLayer(L.id, { bgGradient: e.target.value })} style={S.input} /></div>
+          )}
+          {L.bgType === "image" && (
+            <div>
+              <label style={S.label}>Image</label>
+              <button onClick={() => { setImagePickerTarget("bg"); setShowImagePicker(true); }} style={{ ...S.input, cursor: "pointer", textAlign: "left", color: "#60a5fa" }}>
+                {L.bgImage ? "Change image…" : "Choose image…"}
+              </button>
+              {L.bgImage && <img src={L.bgImage} alt="" style={{ width: "100%", height: 60, objectFit: "cover", borderRadius: 6, marginTop: 6 }} />}
+            </div>
+          )}
+          {L.bgType === "image" && (<>
+            <div><label style={S.label}>Overlay</label><input value={L.bgOverlay === "none" ? "" : L.bgOverlay} onChange={e => updateLayer(L.id, { bgOverlay: e.target.value || "none" })} style={S.input} placeholder="CSS gradient overlay..." /></div>
+            <div><label style={S.label}>Overlay Opacity</label><input type="range" min="0" max="1" step="0.05" value={L.bgOverlayOpacity} onChange={e => updateLayer(L.id, { bgOverlayOpacity: parseFloat(e.target.value) })} style={{ width: "100%" }} /></div>
+          </>)}
+          <div>
+            <label style={S.label}>Filter</label>
+            <select value={L.filter} onChange={e => updateLayer(L.id, { filter: e.target.value })} style={{ ...S.input, cursor: "pointer" }}>
+              <option value="none">None</option><option value="grayscale(100%)">Grayscale</option><option value="sepia(80%)">Sepia</option><option value="blur(2px)">Blur</option><option value="brightness(0.7)">Darken</option><option value="contrast(1.3)">High Contrast</option>
+            </select>
+          </div>
+        </div>
+      );
+    }
+
+    if (L.type === "text") {
+      return (
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div><label style={S.label}>Text</label><textarea value={L.text} onChange={e => updateLayer(L.id, { text: e.target.value })} rows={3} style={{ ...S.input, resize: "vertical", lineHeight: 1.4 }} /></div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>Size</label><input type="number" value={L.fontSize} onChange={e => updateLayer(L.id, { fontSize: parseInt(e.target.value) || 12 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Weight</label><select value={L.fontWeight} onChange={e => updateLayer(L.id, { fontWeight: e.target.value })} style={{ ...S.input, cursor: "pointer" }}>{["300","400","500","600","700","800","900"].map(w => <option key={w} value={w}>{w}</option>)}</select></div>
+          </div>
+          <div><label style={S.label}>Color</label><div style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="color" value={L.color} onChange={e => updateLayer(L.id, { color: e.target.value })} style={{ width: 32, height: 32, border: "none", borderRadius: 6, cursor: "pointer", padding: 0 }} /><input value={L.color} onChange={e => updateLayer(L.id, { color: e.target.value })} style={{ ...S.input, flex: 1 }} /></div></div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>Line H</label><input type="number" step="0.05" value={L.lineHeight} onChange={e => updateLayer(L.id, { lineHeight: parseFloat(e.target.value) || 1 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Spacing</label><input type="number" step="0.5" value={L.letterSpacing} onChange={e => updateLayer(L.id, { letterSpacing: parseFloat(e.target.value) || 0 })} style={S.input} /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>Align</label><select value={L.textAlign} onChange={e => updateLayer(L.id, { textAlign: e.target.value })} style={{ ...S.input, cursor: "pointer" }}>{["left","center","right"].map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Transform</label><select value={L.textTransform} onChange={e => updateLayer(L.id, { textTransform: e.target.value })} style={{ ...S.input, cursor: "pointer" }}>{["none","uppercase","lowercase","capitalize"].map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+          </div>
+          <div><label style={S.label}>Style</label><div style={{ display: "flex", gap: 4 }}>{["normal","italic"].map(fs => (<button key={fs} onClick={() => updateLayer(L.id, { fontStyle: fs })} style={{ ...S.btn, flex: 1, padding: "5px", fontSize: 10, fontWeight: 600, fontStyle: fs, ...(L.fontStyle === fs ? S.btnActive : {}), border: "1px solid #334155", borderRadius: 5, justifyContent: "center" }}>{fs}</button>))}</div></div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>X</label><input type="number" value={L.x} onChange={e => updateLayer(L.id, { x: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Y</label><input type="number" value={L.y} onChange={e => updateLayer(L.id, { y: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>W</label><input type="number" value={L.width} onChange={e => updateLayer(L.id, { width: parseInt(e.target.value) || 30 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>H</label><input type="number" value={L.height} onChange={e => updateLayer(L.id, { height: parseInt(e.target.value) || 20 })} style={S.input} /></div>
+          </div>
+        </div>
+      );
+    }
+
+    if (L.type === "image") {
+      return (
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <label style={S.label}>Image</label>
+            <button onClick={() => { setImagePickerTarget(L.id); setShowImagePicker(true); }} style={{ ...S.input, cursor: "pointer", textAlign: "left", color: "#60a5fa" }}>{L.src ? "Change image…" : "Choose image…"}</button>
+            {L.src && <img src={L.src} alt="" style={{ width: "100%", height: 60, objectFit: "cover", borderRadius: 6, marginTop: 6 }} />}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>Fit</label><select value={L.objectFit} onChange={e => updateLayer(L.id, { objectFit: e.target.value })} style={{ ...S.input, cursor: "pointer" }}>{["cover","contain","fill","none"].map(f => <option key={f} value={f}>{f}</option>)}</select></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Radius</label><input type="number" value={L.borderRadius} onChange={e => updateLayer(L.id, { borderRadius: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+          </div>
+          <div><label style={S.label}>Opacity</label><input type="range" min="0" max="1" step="0.05" value={L.opacity} onChange={e => updateLayer(L.id, { opacity: parseFloat(e.target.value) })} style={{ width: "100%" }} /></div>
+          <div><label style={S.label}>Filter</label><select value={L.filter} onChange={e => updateLayer(L.id, { filter: e.target.value })} style={{ ...S.input, cursor: "pointer" }}><option value="none">None</option><option value="grayscale(100%)">Grayscale</option><option value="sepia(80%)">Sepia</option><option value="blur(2px)">Blur</option><option value="brightness(0.7)">Darken</option><option value="brightness(1.3)">Brighten</option></select></div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>X</label><input type="number" value={L.x} onChange={e => updateLayer(L.id, { x: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Y</label><input type="number" value={L.y} onChange={e => updateLayer(L.id, { y: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>W</label><input type="number" value={L.width} onChange={e => updateLayer(L.id, { width: parseInt(e.target.value) || 30 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>H</label><input type="number" value={L.height} onChange={e => updateLayer(L.id, { height: parseInt(e.target.value) || 20 })} style={S.input} /></div>
+          </div>
+        </div>
+      );
+    }
+
+    if (L.type === "shape") {
+      return (
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div><label style={S.label}>Shape</label><div style={{ display: "flex", gap: 4 }}>{["rect","circle"].map(s => (<button key={s} onClick={() => updateLayer(L.id, { shapeType: s })} style={{ ...S.btn, flex: 1, padding: "5px", fontSize: 10, fontWeight: 600, ...(L.shapeType === s ? S.btnActive : {}), border: "1px solid #334155", borderRadius: 5, justifyContent: "center" }}>{s}</button>))}</div></div>
+          <div><label style={S.label}>Fill</label><div style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="color" value={L.fill.startsWith("#") ? L.fill.substring(0, 7) : "#3b82f6"} onChange={e => updateLayer(L.id, { fill: e.target.value })} style={{ width: 32, height: 32, border: "none", borderRadius: 6, cursor: "pointer", padding: 0 }} /><input value={L.fill} onChange={e => updateLayer(L.id, { fill: e.target.value })} style={{ ...S.input, flex: 1 }} /></div></div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>Opacity</label><input type="range" min="0" max="1" step="0.05" value={L.opacity} onChange={e => updateLayer(L.id, { opacity: parseFloat(e.target.value) })} style={{ width: "100%" }} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Radius</label><input type="number" value={L.borderRadius} onChange={e => updateLayer(L.id, { borderRadius: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>Border W</label><input type="number" value={L.borderWidth} onChange={e => updateLayer(L.id, { borderWidth: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Border Color</label><input type="color" value={L.borderColor.startsWith("#") ? L.borderColor.substring(0, 7) : "#ffffff"} onChange={e => updateLayer(L.id, { borderColor: e.target.value })} style={{ width: "100%", height: 30, border: "none", borderRadius: 6, cursor: "pointer" }} /></div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <div style={{ flex: 1 }}><label style={S.label}>X</label><input type="number" value={L.x} onChange={e => updateLayer(L.id, { x: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Y</label><input type="number" value={L.y} onChange={e => updateLayer(L.id, { y: parseInt(e.target.value) || 0 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>W</label><input type="number" value={L.width} onChange={e => updateLayer(L.id, { width: parseInt(e.target.value) || 30 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>H</label><input type="number" value={L.height} onChange={e => updateLayer(L.id, { height: parseInt(e.target.value) || 20 })} style={S.input} /></div>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // ═══════ IMAGE PICKER MODAL ═══════
+  const renderImagePicker = () => {
+    if (!showImagePicker) return null;
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowImagePicker(false)}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "#13151f", border: "1px solid #1e293b", borderRadius: 14, width: 520, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ padding: "14px 16px", borderBottom: "1px solid #1e293b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>Choose an Image</span>
+            <button onClick={() => setShowImagePicker(false)} style={{ ...S.btn, fontSize: 18 }}>×</button>
+          </div>
+          <div style={{ padding: "10px 16px", borderBottom: "1px solid #1e293b", display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {PHOTO_CATEGORIES.map(c => (
+              <button key={c.id} onClick={() => setPhotoCat(c.id)} style={{ ...S.btn, padding: "4px 10px", fontSize: 10, fontWeight: 600, borderRadius: 14, ...(photoCat === c.id ? { background: "#3b82f6", color: "#fff" } : { border: "1px solid #334155" }) }}>{c.label}</button>
+            ))}
+          </div>
+          <div style={{ padding: 12, overflowY: "auto", flex: 1 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              {filteredPhotos.map(p => (
+                <div key={p.id} onClick={() => {
+                  const img = getImage(p.type);
+                  if (imagePickerTarget === "bg") updateLayer(bgLayer.id, { bgType: "image", bgImage: img });
+                  else updateLayer(imagePickerTarget, { src: img });
+                  setShowImagePicker(false);
+                }} style={{ cursor: "pointer", borderRadius: 8, overflow: "hidden", border: "2px solid transparent", transition: "border-color 0.15s", aspectRatio: "4/3", position: "relative" }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = "#3b82f6"}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = "transparent"}
+                >
+                  <img src={getPickerThumb(p.type)} alt={p.label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 6px 4px", background: "linear-gradient(to top, rgba(0,0,0,0.7), transparent)", fontSize: 9, fontWeight: 600, color: "#fff" }}>{p.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={S.page}>
+      {renderImagePicker()}
+      <div style={S.header}>
+        <button onClick={() => setView("gallery")} style={S.btn}>{Icons.back}</button>
+        <div style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>Atlas Post Creator</div>
+        <button onClick={() => setPublished(true)} style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)", color: "#fff", border: "none", borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+          {Icons.send} Publish
+        </button>
+      </div>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
+        {/* LEFT: Layers */}
+        <div style={{ width: 200, borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", background: "#0d0f17", flexShrink: 0 }}>
+          <div style={{ padding: "10px 12px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>Layers</span>
+            <div style={{ display: "flex", gap: 2 }}>
+              <button onClick={() => addLayer("text")} style={S.btn} title="Add Text">{Icons.text}</button>
+              <button onClick={() => addLayer("image")} style={S.btn} title="Add Image">{Icons.image}</button>
+              <button onClick={() => addLayer("shape")} style={S.btn} title="Add Shape">{Icons.shape}</button>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {[...layers].reverse().map(layer => (
+              <div key={layer.id} onClick={() => setSelectedId(layer.id)} style={{ padding: "6px 12px", display: "flex", alignItems: "center", gap: 6, background: selectedId === layer.id ? "#1e293b" : "transparent", cursor: "pointer", borderLeft: selectedId === layer.id ? "2px solid #3b82f6" : "2px solid transparent", opacity: layer.visible ? 1 : 0.4 }}>
+                <span style={{ fontSize: 9, color: "#475569", width: 14, textAlign: "center" }}>{layer.type === "bg" ? "BG" : layer.type === "text" ? "T" : layer.type === "image" ? "I" : "S"}</span>
+                <span style={{ flex: 1, fontSize: 11, fontWeight: 500, color: "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{layer.name}</span>
+                <button onClick={e => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} style={{ ...S.btn, padding: 2 }}>{layer.visible ? Icons.eye : Icons.eyeOff}</button>
+                <button onClick={e => { e.stopPropagation(); updateLayer(layer.id, { locked: !layer.locked }); }} style={{ ...S.btn, padding: 2 }}>{layer.locked ? Icons.lock : Icons.unlock}</button>
+              </div>
+            ))}
+          </div>
+          {selectedLayer && selectedLayer.type !== "bg" && (
+            <div style={{ padding: "8px 10px", borderTop: "1px solid #1e293b", display: "flex", gap: 3 }}>
+              <button onClick={() => moveLayerOrder(selectedId, "up")} style={{ ...S.btn, flex: 1, justifyContent: "center", border: "1px solid #334155", borderRadius: 4, padding: 4 }} title="Bring Forward">{Icons.up}</button>
+              <button onClick={() => moveLayerOrder(selectedId, "down")} style={{ ...S.btn, flex: 1, justifyContent: "center", border: "1px solid #334155", borderRadius: 4, padding: 4 }} title="Send Back">{Icons.down}</button>
+              <button onClick={() => duplicateLayer(selectedId)} style={{ ...S.btn, flex: 1, justifyContent: "center", border: "1px solid #334155", borderRadius: 4, padding: 4 }} title="Duplicate">{Icons.duplicate}</button>
+              <button onClick={() => deleteLayer(selectedId)} style={{ ...S.btn, flex: 1, justifyContent: "center", border: "1px solid #334155", borderRadius: 4, padding: 4, color: "#f87171" }} title="Delete">{Icons.trash}</button>
+            </div>
+          )}
+        </div>
+        {/* CENTER: Canvas */}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#08080c", overflow: "auto", padding: 24 }} onClick={() => setSelectedId(null)}>
+          <div ref={canvasRef} onClick={e => e.stopPropagation()} style={{ width: CANVAS_W, height: CANVAS_H, position: "relative", overflow: "hidden", borderRadius: 4, boxShadow: "0 0 0 1px #1e293b, 0 20px 60px rgba(0,0,0,0.5)", flexShrink: 0 }}>
+            {layers.map((layer, idx) => renderLayer(layer, idx))}
+          </div>
+        </div>
+        {/* RIGHT: Properties */}
+        <div style={{ width: 240, borderLeft: "1px solid #1e293b", background: "#0d0f17", overflowY: "auto", flexShrink: 0, minHeight: 0 }}>
+          <div style={{ padding: "10px 12px", borderBottom: "1px solid #1e293b" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>{selectedLayer ? selectedLayer.name : "Properties"}</span>
+          </div>
+          {renderProperties()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<AtlasPostCreator />);
+  </script>
+</body>
+</html>
