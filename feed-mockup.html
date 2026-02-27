@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Atlas Feed — Image Post Concept</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #07090f; color: #e2e8f0; font-family: 'Inter', -apple-system, sans-serif; min-height: 100vh; }
+
+  /* ── Shell ── */
+  .shell { display: flex; height: 100vh; overflow: hidden; }
+  .sidebar { width: 56px; background: #0d0f17; border-right: 1px solid #1e293b; display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 6px; flex-shrink: 0; }
+  .sidebar-icon { width: 36px; height: 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #475569; font-size: 16px; }
+  .sidebar-icon.active { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .sidebar-icon:hover:not(.active) { background: #1e293b; color: #94a3b8; }
+  .sidebar-logo { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 14px; color: #fff; margin-bottom: 8px; }
+
+  .main { flex: 1; display: flex; overflow: hidden; }
+
+  /* ── Feed column ── */
+  .feed-col { flex: 1; overflow-y: auto; padding: 0; min-width: 0; }
+
+  /* ── Top nav ── */
+  .feed-nav { position: sticky; top: 0; z-index: 100; background: rgba(7,9,15,0.92); backdrop-filter: blur(12px); border-bottom: 1px solid #1e293b; padding: 0 20px; display: flex; align-items: center; gap: 0; }
+  .feed-nav-tabs { display: flex; gap: 0; flex: 1; }
+  .tab { padding: 14px 16px; font-size: 13px; font-weight: 500; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tab.active { color: #e2e8f0; border-bottom-color: #3b82f6; font-weight: 600; }
+  .tab:hover:not(.active) { color: #94a3b8; }
+  .post-btn { background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff; border: none; border-radius: 8px; padding: 7px 18px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+  /* ── Carousel strip (pinned posts) ── */
+  .carousel { padding: 14px 20px; display: flex; gap: 10px; overflow-x: auto; border-bottom: 1px solid #1e293b; scrollbar-width: none; }
+  .carousel::-webkit-scrollbar { display: none; }
+  .carousel-card { flex-shrink: 0; width: 160px; height: 90px; border-radius: 8px; overflow: hidden; position: relative; cursor: pointer; border: 1px solid #1e293b; }
+  .carousel-card img { width: 100%; height: 100%; object-fit: cover; }
+  .carousel-card .cc-label { position: absolute; bottom: 0; left: 0; right: 0; padding: 18px 8px 6px; background: linear-gradient(to top, rgba(0,0,0,0.85), transparent); font-size: 9px; font-weight: 700; color: #fff; line-height: 1.3; }
+  .carousel-card .cc-badge { position: absolute; top: 5px; left: 5px; background: #ef4444; border-radius: 3px; padding: 1px 5px; font-size: 8px; font-weight: 800; color: #fff; }
+
+  /* ── Feed ── */
+  .feed { padding: 20px; display: flex; flex-direction: column; gap: 20px; max-width: 540px; margin: 0 auto; }
+
+  /* ── Post card ── */
+  .post-card { background: #0d0f17; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden; }
+  .post-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px 10px; }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; flex-shrink: 0; }
+  .post-meta { flex: 1; min-width: 0; }
+  .post-author { font-size: 13px; font-weight: 700; color: #e2e8f0; }
+  .post-byline { font-size: 11px; color: #475569; }
+  .post-time { font-size: 10px; color: #334155; }
+  .badge-ai { background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); border-radius: 4px; padding: 2px 7px; font-size: 9px; font-weight: 700; }
+  .badge-alert { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); border-radius: 4px; padding: 2px 7px; font-size: 9px; font-weight: 700; }
+
+  /* ── The image — full width, no padding ── */
+  .post-image { width: 100%; aspect-ratio: 1/1; overflow: hidden; position: relative; cursor: pointer; }
+  .post-image.landscape { aspect-ratio: 16/9; }
+  .post-image.portrait { aspect-ratio: 4/5; }
+  .post-image canvas { width: 100%; height: 100%; display: block; }
+  .post-image .img-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0); transition: background 0.2s; }
+  .post-image:hover .img-overlay { background: rgba(0,0,0,0.08); }
+
+  /* CTA hover bar — sits above canvas via z-index */
+  .cta-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 10;
+    padding: 14px 20px;
+    background: linear-gradient(to top, rgba(37,99,235,0.95) 0%, rgba(37,99,235,0.8) 60%, transparent 100%);
+    color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    text-align: center; pointer-events: none;
+    opacity: 0; transform: translateY(6px);
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .post-image:hover .cta-bar { opacity: 1; transform: translateY(0); }
+  /* Post 1 already has a painted CTA bar — no duplicate needed */
+  .post-image.has-painted-cta .cta-bar { display: none; }
+
+  /* ── Actions ── */
+  .post-actions { display: flex; align-items: center; gap: 0; padding: 8px 10px 4px; }
+  .action-btn { display: flex; align-items: center; gap: 5px; padding: 6px 8px; border: none; background: none; color: #475569; font-size: 12px; cursor: pointer; border-radius: 7px; font-family: inherit; }
+  .action-btn:hover { background: #1e293b; color: #94a3b8; }
+  .action-btn.liked { color: #f87171; }
+  .action-btn svg { flex-shrink: 0; }
+  .action-spacer { flex: 1; }
+
+  /* ── Caption / insight text ── */
+  .post-caption { padding: 4px 14px 12px; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+  .post-caption strong { color: #e2e8f0; }
+  .post-tags { display: flex; gap: 5px; flex-wrap: wrap; padding: 0 14px 12px; }
+  .tag { background: #1e293b; color: #64748b; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
+
+  /* ── Right sidebar ── */
+  .right-col { width: 300px; flex-shrink: 0; border-left: 1px solid #1e293b; overflow-y: auto; background: #0a0c14; padding: 18px 16px; display: flex; flex-direction: column; gap: 20px; }
+  .widget-title { font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+  .metric-card { background: #0d0f17; border: 1px solid #1e293b; border-radius: 10px; padding: 12px 14px; }
+  .metric-label { font-size: 10px; color: #64748b; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+  .metric-value { font-size: 22px; font-weight: 800; color: #e2e8f0; letter-spacing: -0.5px; }
+  .metric-delta { font-size: 11px; font-weight: 700; margin-left: 6px; }
+  .delta-up { color: #34d399; }
+  .delta-down { color: #f87171; }
+  .sparkline { margin-top: 10px; height: 36px; }
+
+  .news-item { display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border-bottom: 1px solid #1e293b; }
+  .news-item:last-child { border-bottom: none; }
+  .news-source { font-size: 9px; color: #3b82f6; font-weight: 700; text-transform: uppercase; }
+  .news-headline { font-size: 12px; color: #cbd5e1; line-height: 1.4; }
+  .news-time { font-size: 10px; color: #334155; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-logo">A</div>
+    <div class="sidebar-icon active">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    </div>
+    <div class="sidebar-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    </div>
+    <div class="sidebar-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+    </div>
+    <div class="sidebar-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    </div>
+    <div style="flex:1"></div>
+    <div class="sidebar-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Feed -->
+    <div class="feed-col">
+
+      <!-- Top nav -->
+      <div class="feed-nav">
+        <div class="feed-nav-tabs">
+          <div class="tab active">All Posts</div>
+          <div class="tab">Saved</div>
+          <div class="tab">My Posts</div>
+          <div class="tab">Shared With Me</div>
+        </div>
+        <button class="post-btn" onclick="window.location.href='index.html'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Post
+        </button>
+      </div>
+
+      <!-- Pinned carousel -->
+      <div class="carousel">
+        <div class="carousel-card" data-href="index.html">
+          <canvas id="c1" width="320" height="180"></canvas>
+          <div class="cc-badge">ALERT</div>
+          <div class="cc-label">Ad Spend Efficiency<br>Dropping 34%</div>
+        </div>
+        <div class="carousel-card" data-href="index.html">
+          <canvas id="c2" width="320" height="180"></canvas>
+          <div class="cc-label">Q3 e-tron GT Ad<br>Efficiency</div>
+        </div>
+        <div class="carousel-card" data-href="index.html">
+          <canvas id="c3" width="320" height="180"></canvas>
+          <div class="cc-badge">ALERT</div>
+          <div class="cc-label">Ad Spend Dropping<br>34%</div>
+        </div>
+        <div class="carousel-card" data-href="index.html">
+          <canvas id="c4" width="320" height="180"></canvas>
+          <div class="cc-label">Anomaly: Traffic<br>Spike Detected</div>
+        </div>
+      </div>
+
+      <!-- Posts -->
+      <div class="feed">
+
+        <!-- Post 1 — Square KPI alert -->
+        <div class="post-card">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)">AI</div>
+            <div class="post-meta">
+              <div class="post-author">AI Agent <span class="badge-alert" style="margin-left:6px">ALERT</span></div>
+              <div class="post-byline">Automated Insights · Audi Pacific</div>
+            </div>
+            <div class="post-time">2h ago</div>
+          </div>
+          <div class="post-image has-painted-cta" data-href="index.html">
+            <canvas id="p1" width="500" height="500"></canvas>
+            <div class="img-overlay"></div>
+          </div>
+          <div class="post-actions">
+            <button class="action-btn liked">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              14
+            </button>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              3
+            </button>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            </button>
+            <div class="action-spacer"></div>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+            </button>
+          </div>
+          <div class="post-caption"><strong>VDP Views surged +47%</strong> in the last 48 hours — well above the 12% weekly average. Organic mobile traffic is the primary driver. Tap the image to view full analysis.</div>
+          <div class="post-tags">
+            <span class="tag">VDP Views</span>
+            <span class="tag">Organic</span>
+            <span class="tag">Anomaly</span>
+          </div>
+        </div>
+
+        <!-- Post 2 — Landscape header format -->
+        <div class="post-card">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#0ea5e9,#6366f1)">CF</div>
+            <div class="post-meta">
+              <div class="post-author">Cody Fisher</div>
+              <div class="post-byline">Data Analyst at LKN · Audi Pacific</div>
+            </div>
+            <div class="post-time">5h ago</div>
+          </div>
+          <div class="post-image landscape" data-href="index.html">
+            <canvas id="p2" width="640" height="360"></canvas>
+            <div class="img-overlay"></div>
+            <div class="cta-bar">View Full Analysis →</div>
+          </div>
+          <div class="post-actions">
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              6
+            </button>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              1
+            </button>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            </button>
+            <div class="action-spacer"></div>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+            </button>
+          </div>
+          <div class="post-caption"><strong>Critical: Ad Spend Efficiency dropping 34%.</strong> Lead conversion rate at 0.26%, missing targets. Immediate action needed to boost lead quality and refine conversion tactics.</div>
+          <div class="post-tags">
+            <span class="tag">Ad Spend</span><span class="tag">Spend</span><span class="tag">AVA</span>
+          </div>
+        </div>
+
+        <!-- Post 3 — Portrait editorial -->
+        <div class="post-card">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">LD</div>
+            <div class="post-meta">
+              <div class="post-author">Liam Dan <span class="badge-ai" style="margin-left:6px">AI Assist</span></div>
+              <div class="post-byline">Data Analyst at DIS · Audi Pacific</div>
+            </div>
+            <div class="post-time">Jul 18</div>
+          </div>
+          <div class="post-image portrait" data-href="index.html">
+            <canvas id="p3" width="480" height="600"></canvas>
+            <div class="img-overlay"></div>
+            <div class="cta-bar">View Full Analysis →</div>
+          </div>
+          <div class="post-actions">
+            <button class="action-btn liked">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              22
+            </button>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              5
+            </button>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            </button>
+            <div class="action-spacer"></div>
+            <button class="action-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+            </button>
+          </div>
+          <div class="post-caption"><strong>Q3 e-tron GT Ad Efficiency</strong> — load conversion rate at 6.26%, missing targets. Immediate action needed to boost lead quality and refine conversion tactics.</div>
+          <div class="post-tags">
+            <span class="tag">e-tron GT</span><span class="tag">Q3</span><span class="tag">Leads</span>
+          </div>
+        </div>
+
+      </div><!-- /feed -->
+    </div><!-- /feed-col -->
+
+    <!-- Right sidebar -->
+    <div class="right-col">
+      <div>
+        <div class="widget-title">Key Metrics <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="metric-card">
+            <div class="metric-label">Spend <span style="color:#334155;font-size:9px">↗</span></div>
+            <div class="metric-value">$550,350 <span class="metric-delta delta-up">+48%</span></div>
+            <div class="sparkline"><canvas id="spark1" width="260" height="36"></canvas></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Sales</div>
+            <div class="metric-value">105 <span class="metric-delta delta-down">-38%</span></div>
+            <div class="sparkline"><canvas id="spark2" width="260" height="36"></canvas></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Leads</div>
+            <div class="metric-value">220 <span class="metric-delta delta-up">+58%</span></div>
+            <div class="sparkline"><canvas id="spark3" width="260" height="36"></canvas></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="widget-title">Industry News</div>
+        <div class="news-item">
+          <div class="news-source">Automotive News</div>
+          <div class="news-headline">No Lie on a Battery Swap Station Building Spree</div>
+          <div class="news-time">Updated 5 hours ago</div>
+        </div>
+        <div class="news-item">
+          <div class="news-source">Automotive News</div>
+          <div class="news-headline">Chip Shortage Keeps Wrecking Havoc on New Car Sales</div>
+          <div class="news-time">Updated 6 hours ago</div>
+        </div>
+        <div class="news-item">
+          <div class="news-source">Automotive News</div>
+          <div class="news-headline">Supplier Distress Tracker: Layoffs and bankruptcies in the supply chain</div>
+          <div class="news-time">Updated 7 hours ago</div>
+        </div>
+      </div>
+      <div>
+        <div class="widget-title">Topics to Follow</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <span class="tag" style="cursor:pointer">Q3 Etron</span>
+          <span class="tag" style="cursor:pointer">Tier 1</span>
+          <span class="tag" style="cursor:pointer">TV</span>
+          <span class="tag" style="cursor:pointer">Marketing</span>
+          <span class="tag" style="cursor:pointer">Organic</span>
+          <span class="tag" style="cursor:pointer">Tier 3</span>
+          <span class="tag" style="cursor:pointer">Paid Social</span>
+          <span class="tag" style="cursor:pointer">Content</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Procedural canvas renderers ──────────────────────────────
+
+function drawMountainNight(canvas) {
+  const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,"#050816"); sky.addColorStop(0.6,"#0a1128"); sky.addColorStop(1,"#1a0a2e");
+  ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
+  // Stars
+  for(let i=0;i<Math.round(W*H/800);i++){
+    const x=Math.random()*W, y=Math.random()*H*0.65, r=Math.random()*1.2;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,255,255,${0.3+Math.random()*0.7})`; ctx.fill();
+  }
+  // Mountains
+  function mountain(yBase, color, points){
+    ctx.beginPath(); ctx.moveTo(0,H);
+    for(let i=0;i<=points;i++){ ctx.lineTo(i*W/points, yBase + Math.sin(i*0.7)*H*0.1 + Math.cos(i*1.3)*H*0.05); }
+    ctx.lineTo(W,H); ctx.closePath(); ctx.fillStyle=color; ctx.fill();
+  }
+  mountain(H*0.55,"#1a1030",20); mountain(H*0.65,"#120a22",16); mountain(H*0.72,"#0d0718",12);
+  // Ground
+  const grd = ctx.createLinearGradient(0,H*0.75,0,H);
+  grd.addColorStop(0,"#0d0718"); grd.addColorStop(1,"#060410");
+  ctx.fillStyle=grd; ctx.fillRect(0,H*0.75,W,H*0.25);
+}
+
+function drawCityNeon(canvas) {
+  const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+  ctx.fillStyle="#040608"; ctx.fillRect(0,0,W,H);
+  // Buildings
+  const cols = ["#0a0f1a","#080c14","#0c1220","#060a12"];
+  for(let i=0;i<18;i++){
+    const bw=W/14, bx=i*(W/18), bh=H*0.25+Math.random()*H*0.5, by=H-bh;
+    ctx.fillStyle=cols[i%cols.length]; ctx.fillRect(bx,by,bw-2,bh);
+    // windows
+    for(let wy=by+10;wy<H-10;wy+=14){
+      for(let wx=bx+6;wx<bx+bw-10;wx+=12){
+        if(Math.random()>0.4){ ctx.fillStyle=`rgba(${100+Math.random()*155},${120+Math.random()*100},50,${0.4+Math.random()*0.6})`; ctx.fillRect(wx,wy,6,8); }
+      }
+    }
+  }
+  // Neon glow
+  const ng = ctx.createLinearGradient(0,H*0.5,0,H);
+  ng.addColorStop(0,"rgba(99,102,241,0)"); ng.addColorStop(1,"rgba(99,102,241,0.15)");
+  ctx.fillStyle=ng; ctx.fillRect(0,0,W,H);
+}
+
+function drawAbstractGlow(canvas) {
+  const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+  ctx.fillStyle="#04060f"; ctx.fillRect(0,0,W,H);
+  // Glowing orbs
+  const orbs=[{x:W*0.2,y:H*0.3,r:W*0.35,c:"rgba(59,130,246,0.12)"},{x:W*0.8,y:H*0.6,r:W*0.3,c:"rgba(139,92,246,0.1)"},{x:W*0.5,y:H*0.5,r:W*0.25,c:"rgba(16,185,129,0.08)"}];
+  orbs.forEach(o=>{ const g=ctx.createRadialGradient(o.x,o.y,0,o.x,o.y,o.r); g.addColorStop(0,o.c); g.addColorStop(1,"transparent"); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); });
+  // Grid lines
+  ctx.strokeStyle="rgba(255,255,255,0.04)"; ctx.lineWidth=1;
+  for(let x=0;x<W;x+=W/12){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y=0;y<H;y+=H/12){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+}
+
+function drawCarShowroom(canvas) {
+  const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+  const bg = ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,"#0a0c14"); bg.addColorStop(1,"#141824");
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  // Floor reflection
+  const fl = ctx.createLinearGradient(0,H*0.6,0,H);
+  fl.addColorStop(0,"rgba(59,130,246,0.05)"); fl.addColorStop(1,"rgba(59,130,246,0.15)");
+  ctx.fillStyle=fl; ctx.fillRect(0,H*0.6,W,H*0.4);
+  // Spotlight
+  const sp = ctx.createRadialGradient(W/2,H*0.4,0,W/2,H*0.4,W*0.5);
+  sp.addColorStop(0,"rgba(255,255,255,0.06)"); sp.addColorStop(1,"transparent");
+  ctx.fillStyle=sp; ctx.fillRect(0,0,W,H);
+  // Car silhouette
+  ctx.fillStyle="#1a1f2e";
+  const cx=W/2, cy=H*0.62, cw=W*0.7, ch=H*0.18;
+  // body
+  ctx.beginPath();
+  ctx.moveTo(cx-cw/2, cy);
+  ctx.bezierCurveTo(cx-cw/2,cy, cx-cw*0.3,cy-ch, cx-cw*0.1,cy-ch);
+  ctx.lineTo(cx+cw*0.15,cy-ch);
+  ctx.bezierCurveTo(cx+cw*0.35,cy-ch, cx+cw/2,cy-ch*0.3, cx+cw/2,cy);
+  ctx.closePath(); ctx.fill();
+  // wheels
+  ctx.fillStyle="#0d1020";
+  [cx-cw*0.28, cx+cw*0.28].forEach(wx=>{ ctx.beginPath(); ctx.arc(wx, cy+4, ch*0.42, 0, Math.PI*2); ctx.fill(); });
+}
+
+// ── Post image painters ──────────────────────────────────────
+
+function paintPost1(canvas) {
+  const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+  drawMountainNight(canvas);
+  // Overlay
+  const ov = ctx.createLinearGradient(0,0,0,H);
+  ov.addColorStop(0,"rgba(0,0,0,0.1)"); ov.addColorStop(0.5,"rgba(0,0,0,0)"); ov.addColorStop(1,"rgba(0,0,0,0.7)");
+  ctx.fillStyle=ov; ctx.fillRect(0,0,W,H);
+  // Badge
+  ctx.fillStyle="rgba(239,68,68,0.9)"; roundRect(ctx,24,24,120,28,6); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.font=`700 11px Inter,-apple-system,sans-serif`; ctx.letterSpacing="1px";
+  ctx.fillText("ATLAS AI INSIGHT", 36, 43);
+  // KPI
+  ctx.fillStyle="rgba(255,255,255,0.95)";
+  ctx.font=`900 ${W*0.22}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="-2px";
+  ctx.fillText("+47%", 24, H*0.55);
+  // Label
+  ctx.font=`700 ${W*0.04}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="3px";
+  ctx.fillStyle="rgba(255,255,255,0.5)";
+  ctx.fillText("VDP VIEWS", 28, H*0.62);
+  // Subtext
+  ctx.font=`500 ${W*0.033}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="0px";
+  ctx.fillStyle="rgba(255,255,255,0.7)";
+  ctx.fillText("Surge Detected · 48hr Window", 28, H*0.7);
+  // CTA bar
+  ctx.fillStyle="rgba(59,130,246,0.85)"; roundRect(ctx, 24, H-60, W-48, 42, 10); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.font=`700 ${W*0.032}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="1px";
+  const cta="VIEW FULL ANALYSIS →";
+  const ctaW=ctx.measureText(cta).width;
+  ctx.fillText(cta, (W-ctaW)/2, H-32);
+}
+
+function paintPost2(canvas) {
+  const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+  drawCityNeon(canvas);
+  const ov = ctx.createLinearGradient(0,0,W*0.6,0);
+  ov.addColorStop(0,"rgba(0,0,0,0.75)"); ov.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=ov; ctx.fillRect(0,0,W,H);
+  // Label
+  ctx.font=`700 11px Inter,-apple-system,sans-serif`; ctx.letterSpacing="2px";
+  ctx.fillStyle="rgba(96,165,250,0.9)"; ctx.fillText("AD SPEND EFFICIENCY", 32, 52);
+  // Big number
+  ctx.font=`900 ${H*0.38}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="-2px"; ctx.fillStyle="rgba(248,113,113,0.95)";
+  ctx.fillText("-34%", 24, H*0.72);
+  // Sub
+  ctx.font=`500 ${H*0.07}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="0px"; ctx.fillStyle="rgba(255,255,255,0.6)";
+  ctx.fillText("Below Target · Immediate Action", 28, H*0.86);
+}
+
+function paintPost3(canvas) {
+  const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+  // Halftone-ish background
+  ctx.fillStyle="#f5f0e8"; ctx.fillRect(0,0,W,H);
+  // Dot grid
+  for(let x=0;x<W;x+=18){ for(let y=0;y<H;y+=18){ ctx.beginPath(); ctx.arc(x,y,2.5,0,Math.PI*2); ctx.fillStyle="rgba(0,0,0,0.06)"; ctx.fill(); } }
+  // Color block
+  ctx.fillStyle="#0f172a"; ctx.fillRect(0,0,W,H*0.5);
+  // Big type
+  ctx.font=`900 ${W*0.52}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="-4px"; ctx.fillStyle="rgba(255,255,255,0.9)";
+  ctx.fillText("Q3", 20, H*0.44);
+  ctx.fillStyle="#3b82f6"; ctx.fillText("GT", W*0.45, H*0.44);
+  // Stats
+  ctx.font=`700 ${W*0.055}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="0px"; ctx.fillStyle="#0f172a";
+  ctx.fillText("e-tron GT Ad Efficiency", 24, H*0.6);
+  ctx.font=`400 ${W*0.042}px Inter,-apple-system,sans-serif`;
+  ctx.fillStyle="#475569";
+  ctx.fillText("Load conversion: 6.26%", 24, H*0.68);
+  ctx.fillText("Missing quarterly targets", 24, H*0.75);
+  // KPI pill
+  ctx.fillStyle="#ef4444"; roundRect(ctx,24,H*0.82,W-48,52,10); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.font=`800 ${W*0.075}px Inter,-apple-system,sans-serif`;
+  ctx.letterSpacing="-1px";
+  ctx.fillText("−38% LEADS", W/2 - ctx.measureText("−38% LEADS").width/2 + 8, H*0.865);
+}
+
+function paintCarousel(canvas, type) {
+  const ctx = canvas.getContext("2d"), W=canvas.width, H=canvas.height;
+  if(type==="city") drawCityNeon(canvas);
+  else if(type==="car") drawCarShowroom(canvas);
+  else if(type==="abstract") drawAbstractGlow(canvas);
+  else drawMountainNight(canvas);
+  const ov=ctx.createLinearGradient(0,0,0,H); ov.addColorStop(0,"rgba(0,0,0,0.2)"); ov.addColorStop(1,"rgba(0,0,0,0.5)");
+  ctx.fillStyle=ov; ctx.fillRect(0,0,W,H);
+}
+
+function drawSparkline(canvas, data, color, fill) {
+  const ctx=canvas.getContext("2d"), W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  const min=Math.min(...data), max=Math.max(...data), range=max-min||1;
+  const pts=data.map((v,i)=>([i*(W/(data.length-1)), H-(v-min)/range*(H-6)-3]));
+  if(fill){
+    ctx.beginPath(); ctx.moveTo(pts[0][0],H); pts.forEach(p=>ctx.lineTo(p[0],p[1])); ctx.lineTo(pts[pts.length-1][0],H); ctx.closePath();
+    const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,color.replace(")",",0.25)").replace("rgb","rgba")); g.addColorStop(1,color.replace(")",",0)").replace("rgb","rgba"));
+    ctx.fillStyle=g; ctx.fill();
+  }
+  ctx.beginPath(); pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+  ctx.strokeStyle=color; ctx.lineWidth=2; ctx.lineJoin="round"; ctx.stroke();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+// ── Render everything ──
+paintPost1(document.getElementById("p1"));
+paintPost2(document.getElementById("p2"));
+paintPost3(document.getElementById("p3"));
+paintCarousel(document.getElementById("c1"),"mountain");
+paintCarousel(document.getElementById("c2"),"city");
+paintCarousel(document.getElementById("c3"),"abstract");
+paintCarousel(document.getElementById("c4"),"car");
+
+// Sparklines
+drawSparkline(document.getElementById("spark1"),[30,45,38,55,48,70,65,80,72,90,85,95],"rgb(59,130,246)",true);
+drawSparkline(document.getElementById("spark2"),[80,70,75,60,65,50,55,40,45,35,38,30],"rgb(248,113,113)",true);
+drawSparkline(document.getElementById("spark3"),[20,35,28,45,38,55,50,65,58,72,68,85],"rgb(52,211,153)",true);
+
+// ── Wire up all clickable post images and carousel cards ──
+document.querySelectorAll('[data-href]').forEach(el => {
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', function() {
+    window.location.href = this.dataset.href;
+  });
+});
+
+// ── Inject newly published post from localStorage ──
+(function() {
+  try {
+    const raw = localStorage.getItem('atlas_new_post');
+    if (!raw) return;
+    const post = JSON.parse(raw);
+    localStorage.removeItem('atlas_new_post');
+
+    const feed = document.querySelector('.feed');
+    if (!feed) return;
+
+    const title = post.title || 'New Insight';
+    const imgHtml = post.image
+      ? `<img src="${post.image}" style="width:100%;display:block;border-radius:0;max-height:600px;object-fit:cover" />`
+      : `<div style="width:100%;height:280px;background:#1e293b;display:flex;align-items:center;justify-content:center;color:#475569;font-size:13px">No image</div>`;
+
+    const card = document.createElement('div');
+    card.className = 'post-card';
+    card.style.cssText = 'outline:2px solid #3b82f6;outline-offset:-2px;animation:newPostPulse 3s ease forwards;';
+    card.innerHTML = `
+      <div class="post-header">
+        <div class="avatar" style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);font-size:11px">You</div>
+        <div class="post-meta">
+          <div class="post-author">Paul <span class="badge-alert" style="margin-left:6px;background:#22c55e;border-color:#22c55e">NEW</span></div>
+          <div class="post-byline">Data Analyst · Audi Pacific</div>
+        </div>
+        <div class="post-time">Just now</div>
+      </div>
+      <div class="post-image" style="cursor:default">${imgHtml}</div>
+      <div class="post-actions">
+        <button class="action-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          0
+        </button>
+        <button class="action-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          0
+        </button>
+        <button class="action-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        </button>
+        <div class="action-spacer"></div>
+        <button class="action-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+        </button>
+      </div>
+      <div class="post-caption"><strong>${title}</strong> — posted just now via Atlas Post Creator.</div>
+    `;
+
+    feed.insertBefore(card, feed.firstChild);
+
+    // Scroll the new post into view smoothly
+    setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  } catch(e) {}
+})();
+</script>
+
+<style>
+@keyframes newPostPulse {
+  0%   { outline-color: #3b82f6; background: rgba(59,130,246,0.04); }
+  60%  { outline-color: #3b82f6; background: rgba(59,130,246,0.04); }
+  100% { outline-color: transparent; background: transparent; }
+}
+</style>
+</body>
+</html>

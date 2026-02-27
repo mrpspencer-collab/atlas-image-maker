@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Atlas — Create a Post</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Oswald:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700;800;900&family=Bebas+Neue&family=Anton&family=Space+Grotesk:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800;900&family=DM+Sans:wght@400;500;600;700&family=Roboto+Condensed:wght@400;700&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body, #root { width: 100%; height: 100%; background: #e8edf2; overflow: hidden; }
@@ -37,6 +37,48 @@ const CANVAS_PRESETS = [
   { id: "banner",    label: "Banner",     sub: "Wide header",        ratio: "3:1",   w: 630, h: 210 },
   { id: "poster",    label: "Poster",     sub: "Tall print",         ratio: "2:3",   w: 400, h: 600 },
 ];
+
+// ─── Font Options ───
+const FONT_OPTIONS = [
+  { label: "Inter",            value: "'Inter', sans-serif" },
+  { label: "Montserrat",       value: "'Montserrat', sans-serif" },
+  { label: "Oswald",           value: "'Oswald', sans-serif" },
+  { label: "Bebas Neue",       value: "'Bebas Neue', cursive" },
+  { label: "Anton",            value: "'Anton', sans-serif" },
+  { label: "Barlow Condensed", value: "'Barlow Condensed', sans-serif" },
+  { label: "Space Grotesk",    value: "'Space Grotesk', sans-serif" },
+  { label: "DM Sans",          value: "'DM Sans', sans-serif" },
+  { label: "Roboto Condensed", value: "'Roboto Condensed', sans-serif" },
+  { label: "Georgia",          value: "Georgia, serif" },
+  { label: "Courier New",      value: "'Courier New', monospace" },
+];
+
+// ─── Overlay builder helpers ───
+const OVERLAY_PRESETS = [
+  { label: "None",      value: "none" },
+  { label: "↓ Dark",   value: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.85) 100%)" },
+  { label: "↑ Dark",   value: "linear-gradient(to top, rgba(0,0,0,0) 0%, rgba(0,0,0,0.85) 100%)" },
+  { label: "← Dark",   value: "linear-gradient(to left, rgba(0,0,0,0) 0%, rgba(0,0,0,0.85) 100%)" },
+  { label: "→ Dark",   value: "linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,0.85) 100%)" },
+  { label: "Split",    value: "linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.75) 100%)" },
+  { label: "Vignette", value: "radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.8) 100%)" },
+  { label: "◑ Side",   value: "linear-gradient(to right, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.3) 100%)" },
+];
+// 3×3 direction grid: arrows indicate gradient flow direction
+const OV_DIRS = [
+  { label:"↖", dir:"to top left" },    { label:"↑", dir:"to top" },    { label:"↗", dir:"to top right" },
+  { label:"←", dir:"to left" },        { label:"◎", dir:"radial" },    { label:"→", dir:"to right" },
+  { label:"↙", dir:"to bottom left" }, { label:"↓", dir:"to bottom" }, { label:"↘", dir:"to bottom right" },
+];
+const hexToRgb = (hex) => {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `${r},${g},${b}`;
+};
+const buildOverlayCSS = (cfg) => {
+  const { dir, c1, o1, c2, o2 } = cfg;
+  if (dir === "radial") return `radial-gradient(ellipse at center, rgba(${hexToRgb(c1)},${o1}) 0%, rgba(${hexToRgb(c2)},${o2}) 100%)`;
+  return `linear-gradient(${dir}, rgba(${hexToRgb(c1)},${o1}) 0%, rgba(${hexToRgb(c2)},${o2}) 100%)`;
+};
 
 // ─── SVG Icons ───
 const Icons = {
@@ -1039,6 +1081,23 @@ function AtlasPostCreator({ onImageCreated }) {
   const uploadInputRef = useRef(null);
   const [uploadTarget, setUploadTarget] = useState(null); // "bg" | layerId
 
+  // ─── Overlay builder state ───
+  const [overlayBuilder, setOverlayBuilder] = useState({ dir: "to bottom", c1: "#000000", o1: 0.0, c2: "#000000", o2: 0.85 });
+
+  // ─── Undo history ───
+  const historyRef = useRef([]);
+  const layersRef = useRef(layers);
+  useEffect(() => { layersRef.current = layers; }, [layers]);
+  const pushHistory = useCallback(() => {
+    historyRef.current = [...historyRef.current.slice(-29), JSON.parse(JSON.stringify(layersRef.current))];
+  }, []);
+  const undo = useCallback(() => {
+    if (historyRef.current.length === 0) return;
+    const prev = historyRef.current[historyRef.current.length - 1];
+    historyRef.current = historyRef.current.slice(0, -1);
+    setLayers(JSON.parse(JSON.stringify(prev)));
+  }, []);
+
   const handleImageUpload = useCallback((e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1092,11 +1151,13 @@ function AtlasPostCreator({ onImageCreated }) {
   }, []);
 
   const deleteLayer = useCallback((id) => {
+    pushHistory();
     setLayers(prev => prev.filter(l => !(l.id === id && l.type !== "bg")));
     if (selectedId === id) setSelectedId(null);
-  }, [selectedId]);
+  }, [selectedId, pushHistory]);
 
   const duplicateLayer = useCallback((id) => {
+    pushHistory();
     setLayers(prev => {
       const src = prev.find(l => l.id === id);
       if (!src || src.type === "bg") return prev;
@@ -1109,6 +1170,7 @@ function AtlasPostCreator({ onImageCreated }) {
   }, []);
 
   const moveLayerOrder = useCallback((id, dir) => {
+    pushHistory();
     setLayers(prev => {
       const idx = prev.findIndex(l => l.id === id);
       if (idx < 0) return prev;
@@ -1121,6 +1183,7 @@ function AtlasPostCreator({ onImageCreated }) {
   }, []);
 
   const addLayer = useCallback((type) => {
+    pushHistory();
     const layer = makeLayer(type, {
       x: 30 + Math.random() * 40, y: 100 + Math.random() * 40,
       width: type === "shape" ? 150 : 200,
@@ -1148,6 +1211,7 @@ function AtlasPostCreator({ onImageCreated }) {
   ];
 
   const addTextPreset = useCallback((preset) => {
+    pushHistory();
     const layer = makeLayer("text", {
       name: preset.name,
       text: preset.text,
@@ -1172,6 +1236,7 @@ function AtlasPostCreator({ onImageCreated }) {
     const layer = layers.find(l => l.id === layerId);
     if (!layer || layer.locked) { setSelectedId(layerId); return; }
     setSelectedId(layerId);
+    pushHistory();
     const rect = canvasRef.current.getBoundingClientRect();
     const scale = canvasW / rect.width;
     setDragState({ id: layerId, startX: e.clientX, startY: e.clientY, origX: layer.x, origY: layer.y, scale });
@@ -1181,6 +1246,7 @@ function AtlasPostCreator({ onImageCreated }) {
     e.stopPropagation(); e.preventDefault();
     const layer = layers.find(l => l.id === layerId);
     if (!layer || layer.locked) return;
+    pushHistory();
     const rect = canvasRef.current.getBoundingClientRect();
     const scale = canvasW / rect.width;
     setResizeState({ id: layerId, handle, startX: e.clientX, startY: e.clientY, origX: layer.x, origY: layer.y, origW: layer.width, origH: layer.height, scale });
@@ -1219,6 +1285,20 @@ function AtlasPostCreator({ onImageCreated }) {
     window.addEventListener("mouseup", handleMouseUp);
     return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
   }, [dragState, resizeState, bgDragState, updateLayer]);
+
+  // ─── Keyboard shortcuts ───
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo]);
 
   // Reusable scaler — scales layer coords+fonts from (fromW,fromH) to (toW,toH)
   const scaleLayers = (layerList, fromW, fromH, toW, toH) => {
@@ -1466,6 +1546,7 @@ function AtlasPostCreator({ onImageCreated }) {
         e.stopPropagation();
         setSelectedId(layer.id);
         if (layer.bgType !== "image") return;
+        pushHistory();
         const rect = canvasRef.current.getBoundingClientRect();
         const scl = canvasW / rect.width;
         setBgDragState({ id: layer.id, startX: e.clientX, startY: e.clientY, origX: layer.bgImageX ?? 50, origY: layer.bgImageY ?? 50, scale: scl });
@@ -1578,8 +1659,95 @@ function AtlasPostCreator({ onImageCreated }) {
               <label style={S.label}>Scale — {L.bgImageScale ?? 100}%</label>
               <input type="range" min="50" max="300" step="5" value={L.bgImageScale ?? 100} onChange={e => updateLayer(L.id, { bgImageScale: parseInt(e.target.value) })} style={{ width: "100%" }} />
             </div>
-            <div><label style={S.label}>Overlay</label><input value={L.bgOverlay === "none" ? "" : L.bgOverlay} onChange={e => updateLayer(L.id, { bgOverlay: e.target.value || "none" })} style={S.input} placeholder="CSS gradient overlay..." /></div>
-            <div><label style={S.label}>Overlay Opacity</label><input type="range" min="0" max="1" step="0.05" value={L.bgOverlayOpacity} onChange={e => updateLayer(L.id, { bgOverlayOpacity: parseFloat(e.target.value) })} style={{ width: "100%" }} /></div>
+            {/* ── Gradient Overlay Builder ── */}
+            <div>
+              <label style={S.label}>Gradient Overlay</label>
+              {/* Preset chips */}
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+                {OVERLAY_PRESETS.map(p => {
+                  const isActive = L.bgOverlay === p.value;
+                  return (
+                    <button key={p.label} onClick={() => updateLayer(L.id, { bgOverlay: p.value })}
+                      style={{ ...S.btn, padding: "3px 7px", fontSize: 9, fontWeight: 600, border: `1px solid ${isActive ? "#3b82f6" : "#334155"}`, borderRadius: 4, color: isActive ? "#60a5fa" : "#94a3b8", background: isActive ? "rgba(59,130,246,0.1)" : "none" }}>
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Custom builder */}
+              <div style={{ background: "#0d1117", border: "1px solid #1e293b", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* Direction grid */}
+                <div>
+                  <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>Direction</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 26px)", gap: 3 }}>
+                    {OV_DIRS.map(d => {
+                      const active = overlayBuilder.dir === d.dir;
+                      return (
+                        <button key={d.dir} onClick={() => {
+                          const cfg = { ...overlayBuilder, dir: d.dir };
+                          setOverlayBuilder(cfg);
+                          updateLayer(L.id, { bgOverlay: buildOverlayCSS(cfg) });
+                        }} style={{ width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, border: `1px solid ${active ? "#3b82f6" : "#334155"}`, borderRadius: 4, background: active ? "#1e3a5f" : "#13151f", color: active ? "#60a5fa" : "#64748b", cursor: "pointer" }}>
+                          {d.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Start color */}
+                <div>
+                  <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Start — {Math.round(overlayBuilder.o1 * 100)}%</div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="color" value={overlayBuilder.c1} onChange={e => {
+                      const cfg = { ...overlayBuilder, c1: e.target.value };
+                      setOverlayBuilder(cfg);
+                      updateLayer(L.id, { bgOverlay: buildOverlayCSS(cfg) });
+                    }} style={{ width: 26, height: 26, border: "none", borderRadius: 4, cursor: "pointer", padding: 0, flexShrink: 0 }} />
+                    <input type="range" min="0" max="1" step="0.05" value={overlayBuilder.o1} onChange={e => {
+                      const cfg = { ...overlayBuilder, o1: parseFloat(e.target.value) };
+                      setOverlayBuilder(cfg);
+                      updateLayer(L.id, { bgOverlay: buildOverlayCSS(cfg) });
+                    }} style={{ flex: 1 }} />
+                  </div>
+                </div>
+
+                {/* End color */}
+                <div>
+                  <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>End — {Math.round(overlayBuilder.o2 * 100)}%</div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="color" value={overlayBuilder.c2} onChange={e => {
+                      const cfg = { ...overlayBuilder, c2: e.target.value };
+                      setOverlayBuilder(cfg);
+                      updateLayer(L.id, { bgOverlay: buildOverlayCSS(cfg) });
+                    }} style={{ width: 26, height: 26, border: "none", borderRadius: 4, cursor: "pointer", padding: 0, flexShrink: 0 }} />
+                    <input type="range" min="0" max="1" step="0.05" value={overlayBuilder.o2} onChange={e => {
+                      const cfg = { ...overlayBuilder, o2: parseFloat(e.target.value) };
+                      setOverlayBuilder(cfg);
+                      updateLayer(L.id, { bgOverlay: buildOverlayCSS(cfg) });
+                    }} style={{ flex: 1 }} />
+                  </div>
+                </div>
+
+                {/* Apply button */}
+                <button onClick={() => updateLayer(L.id, { bgOverlay: buildOverlayCSS(overlayBuilder) })}
+                  style={{ ...S.btn, justifyContent: "center", border: "1px solid #3b82f6", borderRadius: 5, padding: "5px", fontSize: 10, fontWeight: 700, color: "#60a5fa", background: "rgba(59,130,246,0.08)" }}>
+                  Apply Custom Overlay
+                </button>
+              </div>
+
+              {/* Raw CSS field */}
+              <input value={L.bgOverlay === "none" ? "" : L.bgOverlay}
+                onChange={e => updateLayer(L.id, { bgOverlay: e.target.value || "none" })}
+                style={{ ...S.input, marginTop: 6, fontSize: 10, color: "#64748b" }}
+                placeholder="or paste raw CSS gradient…" />
+            </div>
+
+            <div>
+              <label style={S.label}>Overlay Opacity — {Math.round((L.bgOverlayOpacity ?? 1) * 100)}%</label>
+              <input type="range" min="0" max="1" step="0.05" value={L.bgOverlayOpacity ?? 1} onChange={e => updateLayer(L.id, { bgOverlayOpacity: parseFloat(e.target.value) })} style={{ width: "100%" }} />
+            </div>
           </>)}
           <div>
             <label style={S.label}>Filter</label>
@@ -1595,9 +1763,15 @@ function AtlasPostCreator({ onImageCreated }) {
       return (
         <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
           <div><label style={S.label}>Text</label><textarea value={L.text} onChange={e => updateLayer(L.id, { text: e.target.value })} rows={3} style={{ ...S.input, resize: "vertical", lineHeight: 1.4 }} /></div>
+          <div>
+            <label style={S.label}>Font Family</label>
+            <select value={L.fontFamily} onChange={e => { pushHistory(); updateLayer(L.id, { fontFamily: e.target.value }); }} style={{ ...S.input, cursor: "pointer", fontFamily: L.fontFamily }}>
+              {FONT_OPTIONS.map(f => <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>)}
+            </select>
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ flex: 1 }}><label style={S.label}>Size</label><input type="number" value={L.fontSize} onChange={e => updateLayer(L.id, { fontSize: parseInt(e.target.value) || 12 })} style={S.input} /></div>
-            <div style={{ flex: 1 }}><label style={S.label}>Weight</label><select value={L.fontWeight} onChange={e => updateLayer(L.id, { fontWeight: e.target.value })} style={{ ...S.input, cursor: "pointer" }}>{["300","400","500","600","700","800","900"].map(w => <option key={w} value={w}>{w}</option>)}</select></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Size</label><input type="number" value={L.fontSize} onFocus={pushHistory} onChange={e => updateLayer(L.id, { fontSize: parseInt(e.target.value) || 12 })} style={S.input} /></div>
+            <div style={{ flex: 1 }}><label style={S.label}>Weight</label><select value={L.fontWeight} onChange={e => { pushHistory(); updateLayer(L.id, { fontWeight: e.target.value }); }} style={{ ...S.input, cursor: "pointer" }}>{["300","400","500","600","700","800","900"].map(w => <option key={w} value={w}>{w}</option>)}</select></div>
           </div>
           <div><label style={S.label}>Color</label><div style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="color" value={L.color} onChange={e => updateLayer(L.id, { color: e.target.value })} style={{ width: 32, height: 32, border: "none", borderRadius: 6, cursor: "pointer", padding: 0 }} /><input value={L.color} onChange={e => updateLayer(L.id, { color: e.target.value })} style={{ ...S.input, flex: 1 }} /></div></div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -1750,6 +1924,9 @@ function AtlasPostCreator({ onImageCreated }) {
             )}
           </div>
         )}
+        <button onClick={undo} title="Undo (Ctrl+Z)" style={{ ...S.btn, padding: "5px 8px", border: "1px solid #334155", borderRadius: 7, color: historyRef.current.length > 0 ? "#cbd5e1" : "#334155" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7v6h6"/><path d="M3 13A9 9 0 1 0 5.7 5.7L3 7"/></svg>
+        </button>
         <button onClick={() => { setShowSaveModal(true); setShowSizePicker(false); setShowTextMenu(false); }} style={{ ...S.btn, padding: "5px 10px", border: "1px solid #334155", borderRadius: 7, fontSize: 11, fontWeight: 600, color: "#94a3b8", gap: 5 }} title="Save current design as a reusable template">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           Save template
@@ -1900,9 +2077,15 @@ function CreatePostApp() {
           <div style={{ fontSize: 22, fontWeight: 800, color: "#1a2332", marginBottom: 8 }}>Post Published!</div>
           <div style={{ fontSize: 14, color: "#64748b", marginBottom: 24 }}>Your insight is now live in the Atlas newsfeed. GMs and internet managers will see it shortly.</div>
           {createdImage && <img src={createdImage} alt="" style={{ width: "100%", borderRadius: 10, marginBottom: 24 }} />}
-          <button onClick={() => { setScreen("post"); setCreatedImage(null); setTitle(""); }} style={{ background: teal, color: "#fff", border: "none", borderRadius: 8, padding: "10px 28px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-            Create Another Post
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button onClick={() => window.location.href = "feed-mockup.html"} style={{ background: teal, color: "#fff", border: "none", borderRadius: 8, padding: "12px 28px", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              View in Newsfeed →
+            </button>
+            <button onClick={() => { setScreen("post"); setCreatedImage(null); setTitle(""); }} style={{ background: "none", color: "#64748b", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 28px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
+              Create Another Post
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -2038,7 +2221,18 @@ function CreatePostApp() {
         <div style={{ padding: "16px 28px 24px", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, borderTop: "1px solid #e2e8f0" }}>
           <button style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", padding: "10px 16px" }}>Save Draft</button>
           <button
-            onClick={() => { if (title || createdImage) setScreen("published"); }}
+            onClick={() => {
+              if (title || createdImage) {
+                try {
+                  localStorage.setItem("atlas_new_post", JSON.stringify({
+                    image: createdImage,
+                    title: title || "New Insight",
+                    timestamp: Date.now(),
+                  }));
+                } catch(e) {}
+                setScreen("published");
+              }
+            }}
             style={{ background: title || createdImage ? teal : "#94a3b8", color: "#fff", border: "none", borderRadius: 8, padding: "11px 28px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
           >Publish</button>
         </div>
